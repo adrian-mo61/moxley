@@ -1,0 +1,43 @@
+{
+  "created_utc": "2026-11-19T15:00:01.173560+00:00",
+  "source": "data/pretrain_t2t.jsonl",
+  "source_bytes": 8275074893,
+  "vocab_size": 6400,
+  "special_tokens": 36,
+  "max_docs": 0,
+  "min_chars": 0,
+  "max_chars": 100000000,
+  "max_doc_chars": 8192,
+  "bos_token_id": 1,
+  "eos_token_id": 2,
+  "pad_token_id": 0,
+  "samples": [
+    {
+      "chars": 27,
+      "tokens": 16,
+      "chars_per_token": 1.6875,
+      "roundtrip": true
+    },
+    {
+      "chars": 67,
+      "tokens": 32,
+      "chars_per_token": 2.09375,
+      "roundtrip": true
+    },
+    {
+      "chars": 35,
+      "tokens": 18,
+      "chars_per_token": 1.9444444444444444,
+      "roundtrip": true
+    },
+    {
+      "chars": 31,
+      "tokens": 24,
+      "chars_per_token": 1.2916666666666667,
+      "roundtrip": true
+    }
+  ],
+  "train_seconds": 568.56,
+  "sampled_chars": 100000000,
+  "source_note": "Trained on the first 100M characters of pretrain_t2t.jsonl."
+}

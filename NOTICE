@@ -1,0 +1,11 @@
+Moxley
+Copyright 2026 Moxley contributors
+
+This product includes an architecture and training recipe inspired by MiniMind
+(https://github.com/jingyaogong/minimind), Copyright 2024 Jingyao Gong,
+licensed under the Apache License, Version 2.0.
+
+Moxley is an independent implementation. It does not vendor MiniMind source
+code, model weights, or training data. The pretraining corpus
+`pretrain_t2t.jsonl` is downloaded separately from the MiniMind dataset
+repository and remains subject to its original licenses.

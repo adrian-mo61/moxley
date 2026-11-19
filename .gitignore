@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Local data and checkpoints (too large for Git)
+data/*.jsonl
+!data/sample.jsonl
+data/*.parts/
+data/bin/
+data/._____temp/
+data/.msc
+out/
+checkpoints/
+*.pt
+*.pth
+*.bin
+!data/sample_bin/*.bin
+*.safetensors
+
+# Tokenizer tables are committed, but keep generated training metadata local?
+# No: tokenizer_meta.json is small and useful for reproducibility.
+!data/tokenizer/*.json
+!data/tokenizer/*.txt
+!data/tokenizer/tokenizer_meta.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

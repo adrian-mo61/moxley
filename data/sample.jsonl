@@ -1,0 +1,20 @@
+{"text":"人工智能是计算机科学的一个分支，它研究如何让机器表现出类似人类的智能行为。现代人工智能的核心方法包括深度学习、强化学习和大规模预训练。Transformer 通过自注意力机制建模上下文关系，是当前大语言模型最重要的基础结构之一。"}
+{"text":"清晨的阳光透过窗帘洒进房间，桌上的书页被风轻轻翻动。城市还没有完全醒来，街道上只有零星的脚步声。一个人坐在窗前，写下今天的第一行代码，然后按下运行键，看着终端里滚动的日志。"}
+{"text":"Large language models are trained on large collections of text to predict the next token. During pretraining, the model repeatedly sees a sequence of tokens and learns to assign high probability to the actual next token. This simple objective, scaled up with enough data and compute, produces surprisingly general capabilities."}
+{"text":"预训练数据通常以 JSONL 格式保存，每一行是一个独立的 JSON 对象。对于纯文本预训练，最常见的字段是 text。将 JSONL 转成二进制 token 流可以减少磁盘占用、加快读取速度，并且方便使用内存映射按块采样。"}
+{"text":"Byte-level BPE 先把 UTF-8 文本拆成字节，再把每个字节映射为一个可见字符，最后在这个字符序列上学习 BPE 合并规则。因为初始词表包含全部 256 个字节，所以任何字符串都可以被编码，不会出现无法表示的生僻字。"}
+{"text":"训练一个小型语言模型并不需要非常复杂的工程。一个 decoder-only Transformer、一个可靠的 tokenizer、一份干净的语料，以及一个正确的训练循环，就足以完成从零开始的预训练。真正困难的是数据质量、训练稳定性和评估。"}
+{"text":"深度学习模型的参数通过反向传播和梯度下降进行更新。AdamW 是目前最常用的优化器之一，它结合了动量估计和自适应学习率，并对权重衰减做了修正。学习率预热和余弦退火可以帮助模型在训练初期保持稳定，在后期逐渐收敛。"}
+{"text":"混合精度训练使用 bfloat16 或 float16 来加速矩阵乘法，同时保留部分 float32 计算以维持数值稳定性。对于小模型而言，梯度累积可以在有限的显存下模拟更大的 batch size，从而让训练过程更加平滑。"}
+{"text":"A tokenizer converts text into a sequence of integer ids. The vocabulary size controls the trade-off between sequence length and embedding parameters. A smaller vocabulary makes each embedding cheaper but produces longer sequences; a larger vocabulary does the opposite."}
+{"text":"在自然语言处理中，评估一个语言模型最直接的指标是交叉熵损失，也就是平均每个 token 的负对数似然。困惑度是交叉熵的指数形式，数值越低表示模型对数据的预测越自信。不过损失低并不一定意味着生成质量好。"}
+{"text":"开源社区推动了小型语言模型的快速发展。MiniMind 项目展示了如何在单张消费级显卡上，用几个小时从零训练出一个 64M 参数的对话模型。它的代码结构清晰，适合作为学习大语言模型训练流程的入口。"}
+{"text":"数据清洗是预训练流程中最容易被低估的环节。重复文本会让模型过度记忆，低质量文本会污染语言分布，过短的样本则浪费计算资源。常见的处理包括去重、长度过滤、语言识别、敏感内容过滤以及格式统一。"}
+{"text":"Python 是一种高级编程语言，以其简洁的语法和强大的生态系统而闻名。PyTorch 提供了自动微分、GPU 加速和灵活的神经网络模块，是研究和训练语言模型时最常用的框架之一。"}
+{"text":"写作是一种整理思路的方式。把复杂的问题拆成几个小问题，逐一回答，再把这些答案组织成段落，往往比一开始就追求完整的文章更容易。训练模型也是这样：先让流程跑通，再逐步提高数据规模和模型能力。"}
+{"text":"The attention mechanism computes a weighted sum of value vectors, where the weights come from the similarity between a query and a set of keys. Multi-head attention runs several attention operations in parallel, allowing the model to capture different types of relationships."}
+{"text":"旋转位置编码 RoPE 通过对 query 和 key 施加与位置相关的旋转，把相对位置信息注入注意力分数。与绝对位置嵌入相比，RoPE 在长上下文和外推方面通常表现更好，因此被许多现代大语言模型采用。"}
+{"text":"SwiGLU 是一种常用的前馈网络激活结构，它使用两个线性投影和一个门控乘法。与传统的 ReLU 前馈网络相比，SwiGLU 在相同参数量下通常能取得更好的效果，因此成为 Llama、Qwen 等模型的标准配置。"}
+{"text":"模型的参数量并不等于训练数据量。一个 64M 参数的模型可以在一份几十亿 token 的语料上训练多个 epoch，也可以在一份较小的语料上快速过拟合。选择数据规模时，需要同时考虑计算预算、数据质量和目标能力。"}
+{"text":"检查点保存是长时间训练中不可缺少的一步。除了模型权重，还应该保存优化器状态、学习率调度器状态、当前的 step 和 epoch，以及随机数种子。这样即使训练中断，也可以从最近的位置继续，而不必从头开始。"}
+{"text":"终端里跳动的损失曲线，是训练过程中最直接的反馈。损失突然上升可能意味着学习率过大、数据异常或数值溢出；损失长期不下降则可能意味着模型太小、数据太难或代码存在 bug。耐心观察，逐步排查。"}
