@@ -507,9 +507,24 @@ data/sft_bin/
 └── meta.json
 ```
 
-14 GB JSONL 第一次转换会比较慢；按前 1000 条实测速度估算，全量大约 **40～60 分钟**
-（取决于本机 CPU），产物约 **19 GB**。转换完成后，每个 epoch 直接读 `.bin`，不再
-解析 JSON 或重新分词。
+完整 `sft_t2t.jsonl` 的实际转换结果（记录在
+[`data/sft_bin_meta.json`](data/sft_bin_meta.json)）：
+
+| 指标 | 数值 |
+|---|---:|
+| 源文件 | 14,096,018,369 B |
+| 原始 conversations | 5,109,432 |
+| 可用样本 | 5,052,557 |
+| 字符数 | 8,811,125,028 |
+| token 数 | 3,683,151,995 |
+| `tokens.bin` | 7,366,303,990 B |
+| `mask.bin` | 3,683,151,995 B |
+| 训练集 | 5,027,294 样本 / 3,664,695,793 token |
+| 验证集 | 25,263 样本 / 18,456,202 token |
+| 转换耗时 | 4,635.8 s（约 77 分钟，CPU） |
+
+`max_len=1024` 会截断部分超长对话（本次有 1,499,292 条触及上限）；如果更在意长对话
+完整性，可以改用 `--max-len 2048` 重新转换，但显存和训练时间会增加。
 
 只想先验证流程时，可以只转前 1000 条：
 
@@ -713,7 +728,8 @@ moxley/
 ├── data/sample_sft.jsonl        # 6 条 SFT 样例
 ├── data/sample_sft_bin/         # 已转换好的 SFT 小样本
 ├── data/tokenizer/              # 6400 词表 BBPE 分词器
-├── data/bin_meta.json           # 完整语料转换统计
+├── data/bin_meta.json           # 预训练语料转换统计
+├── data/sft_bin_meta.json       # SFT 语料转换统计
 ├── requirements.txt
 └── pyproject.toml
 ```

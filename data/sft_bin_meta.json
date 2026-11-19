@@ -1,0 +1,31 @@
+{
+  "format": "moxley-sft-bin-v1",
+  "created_utc": "2026-11-19T18:49:08.038324+00:00",
+  "source": "data\\sft_t2t.jsonl",
+  "source_bytes": 14096018369,
+  "tokenizer": "data\\tokenizer",
+  "tokenizer_sha256": "cd965c473d1c9845a6ca545851da8df7873a2b95d4c22e5ff5a70ac05b07cd92",
+  "vocab_size": 6400,
+  "max_len": 1024,
+  "val_ratio": 0.005,
+  "dtype": "uint16 tokens + uint8 mask",
+  "stats": {
+    "documents": 5109432,
+    "samples": 5052557,
+    "skipped": 56875,
+    "skipped_long": 1499292,
+    "characters": 8811125028,
+    "tokens": 3683151995,
+    "train_samples": 5027294,
+    "val_samples": 25263,
+    "train_tokens": 3664695793,
+    "val_tokens": 18456202
+  },
+  "files": {
+    "tokens": "tokens.bin",
+    "mask": "mask.bin",
+    "offsets": "offsets.npy",
+    "train_indices": "train_indices.npy",
+    "val_indices": "val_indices.npy"
+  }
+}
