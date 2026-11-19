@@ -507,8 +507,21 @@ data/sft_bin/
 └── meta.json
 ```
 
-14 GB JSONL 第一次转换会比较慢；转换完成后，每个 epoch 直接读 `.bin`，不再解析
-JSON 或重新分词。
+14 GB JSONL 第一次转换会比较慢；按前 1000 条实测速度估算，全量大约 **40～60 分钟**
+（取决于本机 CPU），产物约 **19 GB**。转换完成后，每个 epoch 直接读 `.bin`，不再
+解析 JSON 或重新分词。
+
+只想先验证流程时，可以只转前 1000 条：
+
+```bash
+python scripts/prepare_sft.py \
+  --input data/sft_t2t.jsonl \
+  --tokenizer data/tokenizer \
+  --output-dir out/sft_1k \
+  --max-len 1024 \
+  --val-ratio 0.01 \
+  --max-samples 1000
+```
 
 #### 2. 从预训练权重开始 SFT
 

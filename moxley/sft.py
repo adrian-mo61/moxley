@@ -242,6 +242,37 @@ def encode_sft_example(
     return ids, mask, len(text)
 
 
+def encode_sft_batch(
+    tokenizer: "BBPETokenizer",
+    conversations: Sequence[Sequence[dict]],
+    max_len: int = 1024,
+) -> list[tuple[list[int], np.ndarray, int] | None]:
+    """Batched variant of :func:`encode_sft_example` for data preparation."""
+    rendered = [render_conversation(item) for item in conversations]
+    texts = [text for text, _ in rendered]
+    encodings = tokenizer.tokenizer.encode_batch(
+        texts, add_special_tokens=False
+    )
+    results: list[tuple[list[int], np.ndarray, int] | None] = []
+    for encoding, (text, spans) in zip(encodings, rendered):
+        ids = list(encoding.ids)
+        mask = np.zeros(len(ids), dtype=np.uint8)
+        for token_index, (start, end) in enumerate(encoding.offsets):
+            if end <= start:
+                continue
+            for span_start, span_end in spans:
+                if start < span_end and end > span_start:
+                    mask[token_index] = 1
+                    break
+        ids = ids[:max_len]
+        mask = mask[:max_len]
+        if not ids or int(mask.sum()) == 0:
+            results.append(None)
+        else:
+            results.append((ids, mask, len(text)))
+    return results
+
+
 class SFTBinDataset(Dataset):
     """Memory-mapped variable-length SFT samples.
 
@@ -345,6 +376,7 @@ def prepare_sft(
     max_len: int = 1024,
     val_ratio: float = 0.005,
     max_samples: int = 0,
+    batch_docs: int = 256,
     max_buffer_tokens: int = 32 * 1024 * 1024,
     quiet: bool = False,
 ) -> dict:
@@ -356,6 +388,8 @@ def prepare_sft(
         raise ValueError("val_ratio must be in [0, 1)")
     if max_len < 2:
         raise ValueError("max_len must be at least 2")
+    if batch_docs < 1:
+        raise ValueError("batch_docs must be positive")
     if tokenizer.vocab_size > np.iinfo(np.uint16).max + 1:
         raise ValueError("uint16 SFT shards require vocab_size <= 65536")
 
@@ -376,23 +410,28 @@ def prepare_sft(
     skipped_long = 0
     characters = 0
     started = time.time()
+    pending: list[list[dict]] = []
 
     with open(tokens_path, "wb") as tokens_handle, open(mask_path, "wb") as mask_handle:
-        for conversations in iter_sft_conversations(input_path, max_samples=max_samples):
-            documents += 1
-            example = encode_sft_example(tokenizer, conversations, max_len=max_len)
-            if example is None:
-                skipped += 1
-                continue
-            ids, mask, text_chars = example
-            if len(ids) >= max_len:
-                skipped_long += 1
-            token_buffer.append(np.asarray(ids, dtype="<u2"))
-            mask_buffer.append(np.asarray(mask, dtype=np.uint8))
-            buffered_tokens += len(ids)
-            offsets.append(offsets[-1] + len(ids))
-            split.append(1 if val_every and (len(split) % val_every == 0) else 0)
-            characters += text_chars
+
+        def consume_batch() -> None:
+            nonlocal buffered_tokens, skipped, skipped_long, characters
+            if not pending:
+                return
+            for example in encode_sft_batch(tokenizer, pending, max_len=max_len):
+                if example is None:
+                    skipped += 1
+                    continue
+                ids, mask, text_chars = example
+                if len(ids) >= max_len:
+                    skipped_long += 1
+                token_buffer.append(np.asarray(ids, dtype="<u2"))
+                mask_buffer.append(np.asarray(mask, dtype=np.uint8))
+                buffered_tokens += len(ids)
+                offsets.append(offsets[-1] + len(ids))
+                split.append(1 if val_every and (len(split) % val_every == 0) else 0)
+                characters += text_chars
+            pending.clear()
 
             if buffered_tokens >= max_buffer_tokens:
                 _write_arrays(tokens_handle, mask_handle, token_buffer, mask_buffer)
@@ -405,6 +444,13 @@ def prepare_sft(
                         flush=True,
                     )
 
+        for conversations in iter_sft_conversations(input_path, max_samples=max_samples):
+            documents += 1
+            pending.append(conversations)
+            if len(pending) >= batch_docs:
+                consume_batch()
+
+        consume_batch()
         _write_arrays(tokens_handle, mask_handle, token_buffer, mask_buffer)
 
     if len(split) == 0:

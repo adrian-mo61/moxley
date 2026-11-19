@@ -29,6 +29,12 @@ def main() -> int:
     parser.add_argument("--max-len", type=int, default=1024)
     parser.add_argument("--val-ratio", type=float, default=0.005)
     parser.add_argument(
+        "--batch-docs",
+        type=int,
+        default=256,
+        help="encode this many conversations per tokenizer batch",
+    )
+    parser.add_argument(
         "--max-samples",
         type=int,
         default=0,
@@ -54,6 +60,7 @@ def main() -> int:
         max_len=args.max_len,
         val_ratio=args.val_ratio,
         max_samples=args.max_samples,
+        batch_docs=args.batch_docs,
     )
     print(json.dumps(metadata, indent=2, ensure_ascii=False))
     return 0
