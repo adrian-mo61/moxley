@@ -528,6 +528,7 @@ moxley/
 │   ├── config.py                # 配置与参数解析
 │   ├── model.py                 # RMSNorm / RoPE / GQA / SwiGLU / CausalLM
 │   ├── tokenizer.py             # BBPE 训练、保存、加载、编码解码
+│   ├── jsonl.py                 # 无第三方依赖的 JSONL 流式读取
 │   └── data.py                  # JSONL -> uint16 .bin，memmap Dataset
 ├── scripts/
 │   ├── train_tokenizer.py       # 分词器训练
@@ -602,6 +603,16 @@ Hugging Face 格式或接入其他推理框架。
 `ByteLevelBPETokenizer` 也能用，但它封装了固定流程。这里直接用
 `Tokenizer(models.BPE()) + ByteLevel`，把 special token、byte alphabet、
 decoder 和保存格式都显式写出来，便于理解和修改。
+
+**Q: 训练时报 `No module named 'tokenizers'`？**
+
+旧版的 `moxley/data.py` 在模块顶层导入了分词器，所以即使只读 `.bin` 也会要求
+`tokenizers`。最新版已把 JSONL 读取拆到 `moxley/jsonl.py`，预训练不再依赖
+`tokenizers`。先 `git pull`；如果要重新转换数据或运行生成脚本，再安装：
+
+```bash
+python -m pip install -r requirements.txt
+```
 
 **Q: 为什么词表是 6400？**
 

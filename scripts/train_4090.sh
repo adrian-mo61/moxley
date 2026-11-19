@@ -49,17 +49,17 @@ if [[ "${SETUP:-0}" == "1" ]]; then
   "$PYTHON" -m pip install -r "$ROOT/requirements.txt"
 fi
 
-if ! "$PYTHON" -c 'import torch' >/dev/null 2>&1; then
+if ! "$PYTHON" -c 'import numpy, torch' >/dev/null 2>&1; then
   cat >&2 <<'EOF'
-ERROR: PyTorch is not installed in the selected Python environment.
+ERROR: PyTorch or NumPy is not installed in the selected Python environment.
 
-Run one of:
+Run:
+  python3 -m pip install -r requirements.txt
+or, for a clean virtual environment:
   SETUP=1 bash scripts/train_4090.sh
-or:
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install torch --index-url https://download.pytorch.org/whl/cu121
-  pip install -r requirements.txt
+
+If PyTorch is missing, install a CUDA build first:
+  python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu121
 EOF
   exit 1
 fi
@@ -96,6 +96,11 @@ OUT_DIR="${OUT_DIR:-$ROOT/out/moxley-64m-4090}"
 # build them automatically. Otherwise fail with an explicit upload hint.
 if [[ ! -f "$DATA_DIR/train.bin" ]]; then
   if [[ -f "$ROOT/data/pretrain_t2t.jsonl" && -d "$ROOT/data/tokenizer" ]]; then
+    if ! "$PYTHON" -c 'import tokenizers' >/dev/null 2>&1; then
+      echo "ERROR: tokenizers is required to convert JSONL -> .bin." >&2
+      echo "Run: $PYTHON -m pip install -r requirements.txt" >&2
+      exit 1
+    fi
     echo "[prepare] $DATA_DIR/train.bin not found; converting the JSONL corpus..."
     mkdir -p "$DATA_DIR"
     "$PYTHON" -u scripts/prepare_data.py \

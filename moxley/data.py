@@ -8,12 +8,16 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .tokenizer import BBPETokenizer, iter_jsonl_texts
+from .jsonl import iter_jsonl_texts
+
+if TYPE_CHECKING:
+    from .tokenizer import BBPETokenizer
 
 
 @dataclass
