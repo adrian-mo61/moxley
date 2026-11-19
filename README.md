@@ -35,6 +35,10 @@ pretrain_t2t.jsonl
 
 Moxley-64M 采用 Llama / Qwen 风格的 decoder-only Transformer：
 
+![Moxley-64M 架构图](docs/moxley_architecture.png)
+
+> 可编辑源文件：[DrawIO](docs/moxley_architecture.drawio) · [SVG](docs/moxley_architecture.svg)
+
 | 项目 | 配置 |
 |---|---|
 | 参数量 | **63,912,192（约 63.9M）** |
@@ -536,6 +540,7 @@ moxley/
 │   ├── generate.py              # 采样
 │   └── train_4090.sh            # Ubuntu + 4090 一键预训练
 ├── tests/                       # 单元测试（模型/分词器/数据）
+├── docs/moxley_architecture.*   # 架构图（drawio / png / svg）
 ├── train_pretrain.py            # 预训练入口
 ├── data/sample.jsonl            # 20 条样例文本
 ├── data/sample_bin/             # 已转换好的 1,357 + 266 token 小样本
