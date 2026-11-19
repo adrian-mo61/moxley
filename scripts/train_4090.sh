@@ -7,8 +7,12 @@
 # First-time environment setup (creates .venv, installs CUDA PyTorch):
 #   SETUP=1 bash scripts/train_4090.sh
 #
-# Continue after an interruption:
+# Continue after an interruption (also automatic if latest.pt exists):
 #   RESUME=1 bash scripts/train_4090.sh
+# Force a fresh run:
+#   RESUME=0 bash scripts/train_4090.sh
+# Disable the progress bar:
+#   PROGRESS=0 bash scripts/train_4090.sh
 #
 # If CUDA runs out of memory, halve the batch and double accumulation:
 #   BATCH_SIZE=16 GRAD_ACCUM=16 bash scripts/train_4090.sh
@@ -146,7 +150,8 @@ SAVE_INTERVAL="${SAVE_INTERVAL:-1000}"
 EVAL_INTERVAL="${EVAL_INTERVAL:-500}"
 LOG_INTERVAL="${LOG_INTERVAL:-10}"
 DTYPE="${DTYPE:-bf16}"
-RESUME="${RESUME:-0}"
+RESUME="${RESUME:-auto}"
+PROGRESS="${PROGRESS:-1}"
 COMPILE="${COMPILE:-0}"
 
 if [[ "$DTYPE" == "bf16" ]]; then
@@ -175,12 +180,23 @@ ARGS=(
   --dtype "$DTYPE"
 )
 
-if [[ "$RESUME" == "1" ]]; then
-  if [[ -f "$OUT_DIR/latest.pt" ]]; then
+case "$RESUME" in
+  1|true|yes|always)
     ARGS+=(--resume)
-  else
-    echo "[warning] RESUME=1 but $OUT_DIR/latest.pt does not exist; starting fresh" >&2
-  fi
+    ;;
+  0|false|no|never)
+    ARGS+=(--fresh)
+    ;;
+  auto)
+    # train_pretrain.py auto-detects out-dir/latest.pt.
+    ;;
+  *)
+    echo "[warning] unknown RESUME=$RESUME; treating it as auto" >&2
+    ;;
+esac
+
+if [[ "$PROGRESS" == "0" ]]; then
+  ARGS+=(--no-progress)
 fi
 
 if [[ "$COMPILE" == "1" ]]; then
@@ -201,6 +217,7 @@ Moxley-64M pretraining on a single 4090
   epochs      : $EPOCHS (max_steps=$MAX_STEPS)
   precision   : $DTYPE
   resume      : $RESUME
+  progress    : $PROGRESS
   log         : $OUT_DIR/train.log
 ============================================================
 EOF
@@ -223,7 +240,9 @@ If this is CUDA OOM, retry with the same effective batch:
   BATCH_SIZE=8 GRAD_ACCUM=32 bash scripts/train_4090.sh
   BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_4090.sh
 
-To resume after a stopped job:
+To resume after a stopped job (automatic when latest.pt exists):
+  bash scripts/train_4090.sh
+  # or require an existing checkpoint:
   RESUME=1 bash scripts/train_4090.sh
 EOF
   exit "$status"

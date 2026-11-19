@@ -288,12 +288,21 @@ python train_pretrain.py \
 ```bash
 python train_pretrain.py \
   --data-dir data/bin \
-  --out-dir out/moxley-64m \
-  --resume
+  --out-dir out/moxley-64m
 ```
 
-`--resume` 会读取 `out/moxley-64m/latest.pt`，恢复模型、优化器、scaler、step、
-epoch 以及 epoch 内 batch 位置。
+训练代码本身会自动检测 `out/moxley-64m/latest.pt`：存在就恢复模型、优化器、
+scaler、step、epoch 以及 epoch 内 batch 位置；不存在则从头开始。
+
+```bash
+# 强制要求恢复，没有 checkpoint 就报错
+python train_pretrain.py --data-dir data/bin --out-dir out/moxley-64m --resume
+
+# 忽略旧 checkpoint，从头训练
+python train_pretrain.py --data-dir data/bin --out-dir out/moxley-64m --fresh
+```
+
+训练时会显示 tqdm 进度条；不需要时可以加 `--no-progress`。
 
 ### 2.6 Ubuntu + RTX 4090 一键脚本
 
@@ -347,6 +356,11 @@ SETUP=1 bash scripts/train_4090.sh
 | `SAVE_INTERVAL` | 1000 | 每 1000 步存 `latest.pt` |
 | `NUM_WORKERS` | 8 | 按云主机 vCPU 数调整 |
 | `OUT_DIR` | `out/moxley-64m-4090` | 日志和权重目录 |
+| `RESUME` | `auto` | 自动检测 `latest.pt`；`0` 从头，`1` 强制续训 |
+| `PROGRESS` | `1` | 显示 tqdm 进度条；`0` 关闭 |
+
+训练时终端会显示 tqdm 进度条，包含 step、loss、lr、tok/s 和预计剩余时间；
+`train.log` 里同时保留关键步骤日志。
 
 按 2.11B 训练 token 计算，默认配置约 **16,134 个 optimizer step**，纯计算量约
 **811 PFLOPs**。4090 的实际耗时主要取决于功耗限制和训练吞吐：
@@ -382,18 +396,36 @@ BATCH_SIZE=8 GRAD_ACCUM=32 bash scripts/train_4090.sh
 BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_4090.sh
 ```
 
-**中断后续训：**
+**断点续训：**
+
+默认情况下，只要 `out/moxley-64m-4090/latest.pt` 存在，再次运行脚本就会自动
+恢复模型、优化器、step 和 epoch 内位置，不需要额外参数。
 
 ```bash
+# 自动续训（默认行为）
+bash scripts/train_4090.sh
+
+# 强制要求存在 checkpoint，不存在则报错
 RESUME=1 bash scripts/train_4090.sh
+
+# 忽略旧 checkpoint，从头开始
+RESUME=0 bash scripts/train_4090.sh
 ```
 
-**建议放在 tmux 里跑：**
+**建议放在 screen 里跑：**
 
 ```bash
-tmux new -s moxley
-# 在 tmux 内运行训练命令
-# Ctrl-b d 退出，tmux attach -t moxley 重新连接
+# 如果云主机没有 screen：
+sudo apt update && sudo apt install -y screen
+
+screen -S moxley
+
+# 在 screen 内运行训练命令
+bash scripts/train_4090.sh
+
+# 按 Ctrl-a 再按 d 脱离
+# screen -ls          查看会话
+# screen -r moxley    重新连接
 ```
 
 日志与检查点：

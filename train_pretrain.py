@@ -7,6 +7,8 @@ Single-process, single-GPU (or CPU) trainer with:
 * gradient accumulation and gradient clipping
 * bf16/fp16 autocast on CUDA
 * periodic validation and resumable checkpoints
+* automatic resume from ``latest.pt`` when it exists
+* tqdm progress bar with loss / LR / throughput
 
 For multi-GPU training, wrap this script with ``torchrun`` and a DistributedSampler
 in a future revision; a 64M model is comfortably trainable on one 24GB GPU.
@@ -25,6 +27,11 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+
+try:
+    from tqdm import tqdm
+except ImportError:  # progress remains optional; requirements.txt installs tqdm
+    tqdm = None
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -65,7 +72,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-interval", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--compile", action="store_true")
-    parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="disable the tqdm progress bar",
+    )
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume",
+        action="store_true",
+        help="require resuming from out-dir/latest.pt (default: auto-detect)",
+    )
+    resume_group.add_argument(
+        "--fresh",
+        action="store_true",
+        help="ignore latest.pt and start a new run",
+    )
     return parser.parse_args()
 
 
@@ -262,7 +284,8 @@ def main() -> int:
 
     start_epoch, start_batch, global_step, best_val = 0, 0, 0, float("inf")
     checkpoint_path = args.out_dir / "latest.pt"
-    if args.resume and checkpoint_path.exists():
+    resumed = False
+    if checkpoint_path.exists() and not args.fresh:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         unwrap(model).load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
@@ -275,17 +298,24 @@ def main() -> int:
         if start_batch >= steps_per_epoch * args.grad_accum:
             start_epoch += 1
             start_batch = 0
+        resumed = True
         print(
             f"resumed from {checkpoint_path} at epoch={start_epoch + 1}, "
             f"step={global_step}, batch={start_batch}",
             flush=True,
         )
     elif args.resume:
-        print(f"no checkpoint at {checkpoint_path}; starting from scratch", flush=True)
+        raise SystemExit(
+            f"--resume requested but {checkpoint_path} does not exist"
+        )
+    elif args.fresh and checkpoint_path.exists():
+        print(f"--fresh: ignoring {checkpoint_path}", flush=True)
 
     log_path = args.out_dir / "train_log.csv"
-    write_header = not log_path.exists() or log_path.stat().st_size == 0
-    log_mode = "a" if log_path.exists() else "w"
+    write_header = (
+        not resumed or not log_path.exists() or log_path.stat().st_size == 0
+    )
+    log_mode = "a" if resumed and log_path.exists() else "w"
     log_handle = open(log_path, log_mode, encoding="utf-8", newline="")
     log_writer = csv.writer(log_handle)
     if write_header:
@@ -301,6 +331,31 @@ def main() -> int:
     epoch_offset = start_batch
     micro_step = start_batch
     loss_accum = 0.0
+
+    progress = None
+    if not args.no_progress:
+        if tqdm is None:
+            print(
+                "warning: tqdm is not installed; progress bar disabled. "
+                "Install it with: pip install tqdm",
+                flush=True,
+            )
+        else:
+            progress = tqdm(
+                total=max(total_steps, global_step),
+                initial=min(global_step, max(total_steps, global_step)),
+                desc="Moxley-64M",
+                unit="step",
+                dynamic_ncols=True,
+                leave=True,
+                file=sys.stderr,
+            )
+
+    def emit(message: str) -> None:
+        if progress is not None:
+            progress.write(message)
+        else:
+            print(message, flush=True)
 
     for epoch in range(start_epoch, args.epochs):
         loader = make_loader(train_dataset, epoch, shuffle=True)
@@ -342,17 +397,23 @@ def main() -> int:
             tokens_seen += tokens_per_step
             current_loss = loss_accum / args.grad_accum
             loss_accum = 0.0
+            if progress is not None:
+                progress.update(1)
 
             if global_step % args.log_interval == 0 or global_step == total_steps:
                 now = time.time()
                 elapsed = max(now - last_log, 1e-6)
                 interval_tokens = tokens_seen - last_log_tokens
-                print(
+                emit(
                     f"step {global_step}/{total_steps} | epoch {epoch + 1} | "
                     f"loss {current_loss:.4f} | lr {lr:.2e} | "
-                    f"{interval_tokens / elapsed:,.0f} tok/s",
-                    flush=True,
+                    f"{interval_tokens / elapsed:,.0f} tok/s"
                 )
+                if progress is not None:
+                    progress.set_postfix_str(
+                        f"loss={current_loss:.4f} lr={lr:.1e} "
+                        f"tok/s={interval_tokens / elapsed:,.0f}"
+                    )
                 log_writer.writerow(
                     [global_step, epoch + 1, f"{current_loss:.6f}", "", f"{lr:.8f}", tokens_seen, f"{now - run_started:.1f}"]
                 )
@@ -372,7 +433,7 @@ def main() -> int:
                     args.eval_batches,
                 )
                 best_val = min(best_val, val_loss)
-                print(f"  validation loss: {val_loss:.4f} (best {best_val:.4f})", flush=True)
+                emit(f"  validation loss: {val_loss:.4f} (best {best_val:.4f})")
                 log_writer.writerow(
                     [global_step, epoch + 1, "", f"{val_loss:.6f}", f"{lr:.8f}", tokens_seen, f"{time.time() - run_started:.1f}"]
                 )
@@ -391,8 +452,7 @@ def main() -> int:
                     epoch_offset + micro_step,
                     best_val,
                 )
-                print(f"  saved {checkpoint_path}", flush=True)
-
+                emit(f"  saved {checkpoint_path}")
             if args.max_steps > 0 and global_step >= args.max_steps:
                 stop = True
                 break
@@ -400,6 +460,10 @@ def main() -> int:
         start_batch = 0
         if stop:
             break
+
+    if progress is not None:
+        progress.close()
+        progress = None
 
     final_val = evaluate(
         model, eval_loader, device, amp_dtype, amp_enabled, args.eval_batches
