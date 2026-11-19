@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Moxley-64M pretraining launcher for a single NVIDIA RTX 3080 Ti (12 GB) on Ubuntu.
+# Moxley-64M pretraining launcher for a single NVIDIA RTX 4090 (24 GB) on Ubuntu.
 #
 # Quick start:
-#   bash scripts/train_3080ti.sh
+#   bash scripts/train_4090.sh
 #
 # First-time environment setup (creates .venv, installs CUDA PyTorch):
-#   SETUP=1 bash scripts/train_3080ti.sh
+#   SETUP=1 bash scripts/train_4090.sh
 #
 # Continue after an interruption:
-#   RESUME=1 bash scripts/train_3080ti.sh
+#   RESUME=1 bash scripts/train_4090.sh
 #
 # If CUDA runs out of memory, halve the batch and double accumulation:
-#   BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_3080ti.sh
+#   BATCH_SIZE=16 GRAD_ACCUM=16 bash scripts/train_4090.sh
 #
-# If you have spare VRAM and want more throughput:
-#   BATCH_SIZE=16 GRAD_ACCUM=16 bash scripts/train_3080ti.sh
+# More aggressive fallback:
+#   BATCH_SIZE=8 GRAD_ACCUM=32 bash scripts/train_4090.sh
+#   BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_4090.sh
 #
 # All paths are resolved from the repository root, so the script can be launched
 # from any directory.
@@ -39,7 +40,7 @@ if [[ "${SETUP:-0}" == "1" ]]; then
   fi
   PYTHON="$ROOT/.venv/bin/python"
   "$PYTHON" -m pip install --upgrade pip
-  # CUDA 12.1 wheels work on Ampere / RTX 3080 Ti with a recent NVIDIA driver.
+  # CUDA 12.1 wheels work on Ada / RTX 4090 with a recent NVIDIA driver.
   "$PYTHON" -m pip install torch --index-url https://download.pytorch.org/whl/cu121
   "$PYTHON" -m pip install -r "$ROOT/requirements.txt"
 fi
@@ -49,7 +50,7 @@ if ! "$PYTHON" -c 'import torch' >/dev/null 2>&1; then
 ERROR: PyTorch is not installed in the selected Python environment.
 
 Run one of:
-  SETUP=1 bash scripts/train_3080ti.sh
+  SETUP=1 bash scripts/train_4090.sh
 or:
   python3 -m venv .venv
   source .venv/bin/activate
@@ -85,7 +86,7 @@ if props.total_memory < 10 * 1024**3:
 PY
 
 DATA_DIR="${DATA_DIR:-$ROOT/data/bin}"
-OUT_DIR="${OUT_DIR:-$ROOT/out/moxley-64m-3080ti}"
+OUT_DIR="${OUT_DIR:-$ROOT/out/moxley-64m-4090}"
 
 # If the shards are missing but the raw corpus + tokenizer are on the machine,
 # build them automatically. Otherwise fail with an explicit upload hint.
@@ -129,12 +130,12 @@ fi
 mkdir -p "$OUT_DIR"
 
 # ---------------------------------------------------------------------------
-# Defaults tuned for 12 GiB VRAM. Effective batch = 8 * 32 * 512 = 131,072 tokens.
+# Defaults tuned for 24 GiB VRAM. Effective batch = 32 * 8 * 512 = 131,072 tokens.
 # Override any value with an environment variable.
 # ---------------------------------------------------------------------------
 SEQ_LEN="${SEQ_LEN:-512}"
-BATCH_SIZE="${BATCH_SIZE:-8}"
-GRAD_ACCUM="${GRAD_ACCUM:-32}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
+GRAD_ACCUM="${GRAD_ACCUM:-8}"
 EPOCHS="${EPOCHS:-1}"
 MAX_STEPS="${MAX_STEPS:-0}"
 LR="${LR:-5e-4}"
@@ -190,7 +191,7 @@ TOKENS_PER_STEP=$((BATCH_SIZE * GRAD_ACCUM * SEQ_LEN))
 
 cat <<EOF
 ============================================================
-Moxley-64M pretraining on a single 3080 Ti
+Moxley-64M pretraining on a single 4090
   repository  : $ROOT
   data        : $DATA_DIR
   train.bin   : $((TRAIN_BYTES / 1024 / 1024)) MiB
@@ -218,11 +219,12 @@ if (( status != 0 )); then
 ERROR: training exited with code $status.
 
 If this is CUDA OOM, retry with the same effective batch:
-  BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_3080ti.sh
-  BATCH_SIZE=2 GRAD_ACCUM=128 bash scripts/train_3080ti.sh
+  BATCH_SIZE=16 GRAD_ACCUM=16 bash scripts/train_4090.sh
+  BATCH_SIZE=8 GRAD_ACCUM=32 bash scripts/train_4090.sh
+  BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_4090.sh
 
 To resume after a stopped job:
-  RESUME=1 bash scripts/train_3080ti.sh
+  RESUME=1 bash scripts/train_4090.sh
 EOF
   exit "$status"
 fi

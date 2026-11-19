@@ -295,7 +295,7 @@ python train_pretrain.py \
 `--resume` 会读取 `out/moxley-64m/latest.pt`，恢复模型、优化器、scaler、step、
 epoch 以及 epoch 内 batch 位置。
 
-### 2.6 Ubuntu + RTX 3080 Ti 一键脚本
+### 2.6 Ubuntu + RTX 4090 一键脚本
 
 Git 仓库里没有 4.2 GB 的 `train.bin`，所以云端需要先上传 `.bin` 文件，或者在
 云端重新从 JSONL 转换。
@@ -312,14 +312,14 @@ scp data/bin/train.bin data/bin/val.bin data/bin/meta.json USER@HOST:~/moxley/da
 ```bash
 git clone https://github.com/adrian-mo61/moxley.git
 cd moxley
-SETUP=1 bash scripts/train_3080ti.sh
+SETUP=1 bash scripts/train_4090.sh
 ```
 
 `SETUP=1` 会创建 `.venv`，安装 CUDA 12.1 版 PyTorch，然后开始预训练。如果环境
 已经配置好，直接运行：
 
 ```bash
-bash scripts/train_3080ti.sh
+bash scripts/train_4090.sh
 ```
 
 如果 `data/bin/train.bin` 不存在，但机器上已有 `data/pretrain_t2t.jsonl` 和
@@ -329,53 +329,63 @@ bash scripts/train_3080ti.sh
 ```bash
 pip install modelscope
 modelscope download --dataset gongjy/minimind_dataset pretrain_t2t.jsonl --local_dir data
-SETUP=1 bash scripts/train_3080ti.sh
+SETUP=1 bash scripts/train_4090.sh
 ```
 
-脚本默认值（针对 12 GB 显存的 3080 Ti）：
+脚本默认值（针对 24 GB 显存的 4090）：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `SEQ_LEN` | 512 | 训练上下文长度 |
-| `BATCH_SIZE` | 8 | 单次前向的样本数 |
-| `GRAD_ACCUM` | 32 | 梯度累积步数 |
-| 有效 batch | 131,072 tokens/step | `8 × 32 × 512` |
-| `DTYPE` | bf16 | 3080 Ti 支持 bfloat16 |
+| `BATCH_SIZE` | 32 | 单次前向的样本数 |
+| `GRAD_ACCUM` | 8 | 梯度累积步数 |
+| 有效 batch | 131,072 tokens/step | `32 × 8 × 512` |
+| `DTYPE` | bf16 | 4090 支持 bfloat16 |
 | `EPOCHS` | 1 | 2.11B 训练 token 一轮 |
 | `LR` | 5e-4 | 与通用脚本一致 |
 | `EVAL_INTERVAL` | 500 | 每 500 步验证 |
 | `SAVE_INTERVAL` | 1000 | 每 1000 步存 `latest.pt` |
 | `NUM_WORKERS` | 8 | 按云主机 vCPU 数调整 |
-| `OUT_DIR` | `out/moxley-64m-3080ti` | 日志和权重目录 |
+| `OUT_DIR` | `out/moxley-64m-4090` | 日志和权重目录 |
 
-按 2.11B 训练 token 计算，默认配置约 **16,134 个 optimizer step**。3080 Ti 上
-实际需要十几小时量级，具体以日志里的 `tok/s` 为准。
+按 2.11B 训练 token 计算，默认配置约 **16,134 个 optimizer step**，纯计算量约
+**811 PFLOPs**。4090 的实际耗时主要取决于功耗限制和训练吞吐：
+
+| 实测吞吐 | 预计耗时 |
+|---:|---:|
+| 50k tokens/s | 约 11.7 小时 |
+| 80k tokens/s | 约 7.3 小时 |
+| 120k tokens/s | 约 4.9 小时 |
+
+**预估：默认配置下约 5～10 小时**，加上验证/保存开销通常再多 5%～10%。开跑后
+直接看日志里的 `tok/s`，用 `2,114,780,405 ÷ tok/s ÷ 3600` 就能换算剩余小时数。
 
 **先跑 20 步确认环境：**
 
 ```bash
 MAX_STEPS=20 \
-BATCH_SIZE=2 \
+BATCH_SIZE=4 \
 GRAD_ACCUM=1 \
 WARMUP_STEPS=10 \
 EVAL_INTERVAL=10 \
 SAVE_INTERVAL=0 \
-OUT_DIR=out/smoke-3080ti \
-bash scripts/train_3080ti.sh
+OUT_DIR=out/smoke-4090 \
+bash scripts/train_4090.sh
 ```
 
 **显存不足时**，保持有效 batch 不变，降低单次 batch、提高累积：
 
 ```bash
-BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_3080ti.sh
+BATCH_SIZE=16 GRAD_ACCUM=16 bash scripts/train_4090.sh
 # 仍 OOM：
-BATCH_SIZE=2 GRAD_ACCUM=128 bash scripts/train_3080ti.sh
+BATCH_SIZE=8 GRAD_ACCUM=32 bash scripts/train_4090.sh
+BATCH_SIZE=4 GRAD_ACCUM=64 bash scripts/train_4090.sh
 ```
 
 **中断后续训：**
 
 ```bash
-RESUME=1 bash scripts/train_3080ti.sh
+RESUME=1 bash scripts/train_4090.sh
 ```
 
 **建议放在 tmux 里跑：**
@@ -389,7 +399,7 @@ tmux new -s moxley
 日志与检查点：
 
 ```text
-out/moxley-64m-3080ti/
+out/moxley-64m-4090/
 ├── train_log.csv
 ├── train.log
 ├── latest.pt          # 断点续训
@@ -491,7 +501,7 @@ moxley/
 │   ├── train_tokenizer.py       # 分词器训练
 │   ├── prepare_data.py          # 数据转换
 │   ├── generate.py              # 采样
-│   └── train_3080ti.sh          # Ubuntu + 3080 Ti 一键预训练
+│   └── train_4090.sh            # Ubuntu + 4090 一键预训练
 ├── tests/                       # 单元测试（模型/分词器/数据）
 ├── train_pretrain.py            # 预训练入口
 ├── data/sample.jsonl            # 20 条样例文本
