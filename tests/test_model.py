@@ -51,7 +51,13 @@ def test_generate():
     torch.manual_seed(2)
     model = MoxleyForCausalLM(tiny_config()).eval()
     prompt = torch.randint(0, 512, (1, 4))
-    output = model.generate(prompt, max_new_tokens=5, temperature=0)
+    output = model.generate(
+        prompt,
+        max_new_tokens=5,
+        temperature=0,
+        repetition_penalty=1.2,
+        no_repeat_ngram_size=2,
+    )
     assert output.shape == (1, 9)
     assert torch.equal(output[:, :4], prompt)
 

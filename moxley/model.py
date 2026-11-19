@@ -312,10 +312,16 @@ class MoxleyForCausalLM(nn.Module):
         top_p: float = 0.9,
         eos_token_id: Optional[int] = None,
         use_cache: bool = True,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
     ) -> torch.Tensor:
         """Simple single-batch sampling loop with optional KV cache."""
         if eos_token_id is None:
             eos_token_id = self.config.eos_token_id
+        if repetition_penalty < 1.0:
+            raise ValueError("repetition_penalty must be >= 1.0")
+        if no_repeat_ngram_size == 1:
+            raise ValueError("no_repeat_ngram_size must be 0 or >= 2")
         do_sample = temperature is not None and temperature > 0
         past: Optional[list[tuple[torch.Tensor, torch.Tensor]]] = None
         generated = input_ids
@@ -327,6 +333,30 @@ class MoxleyForCausalLM(nn.Module):
             else:
                 output = self(generated, use_cache=use_cache)
             logits = output.logits[:, -1].float()
+
+            if repetition_penalty > 1.0:
+                for row in range(logits.shape[0]):
+                    seen = torch.unique(generated[row])
+                    values = logits[row, seen]
+                    logits[row, seen] = torch.where(
+                        values > 0, values / repetition_penalty, values * repetition_penalty
+                    )
+
+            if no_repeat_ngram_size >= 2:
+                for row in range(logits.shape[0]):
+                    tokens = generated[row].tolist()
+                    if len(tokens) < no_repeat_ngram_size:
+                        continue
+                    prefix = tuple(tokens[-(no_repeat_ngram_size - 1) :])
+                    banned: set[int] = set()
+                    for start in range(len(tokens) - no_repeat_ngram_size + 1):
+                        if tuple(tokens[start : start + no_repeat_ngram_size - 1]) == prefix:
+                            banned.add(tokens[start + no_repeat_ngram_size - 1])
+                    if banned:
+                        keep = logits[row].clone()
+                        logits[row, list(banned)] = float("-inf")
+                        if not torch.isfinite(logits[row]).any():
+                            logits[row] = keep
 
             if do_sample:
                 logits = logits / temperature

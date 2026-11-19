@@ -28,6 +28,18 @@ def main() -> int:
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=50)
     parser.add_argument("--top-p", type=float, default=0.9)
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=1.1,
+        help="penalize tokens already present in the prompt/continuation",
+    )
+    parser.add_argument(
+        "--no-repeat-ngram-size",
+        type=int,
+        default=4,
+        help="block repeated n-grams (0 disables; 2-4 is typical)",
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-cache", action="store_true")
@@ -56,6 +68,8 @@ def main() -> int:
         top_p=args.top_p,
         eos_token_id=tokenizer.eos_token_id,
         use_cache=not args.no_cache,
+        repetition_penalty=args.repetition_penalty,
+        no_repeat_ngram_size=args.no_repeat_ngram_size,
     )
     new_ids = output[0, len(prompt_ids) :].tolist()
     continuation = tokenizer.decode(new_ids, skip_special_tokens=True)

@@ -21,6 +21,7 @@ data/sft_bin/
 data/._____temp/
 data/.msc
 out/
+models/
 checkpoints/
 *.pt
 *.pth

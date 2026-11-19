@@ -465,6 +465,21 @@ python scripts/generate.py \
 `--temperature 0` 等价于贪心解码。生成脚本默认使用 KV cache；加 `--no-cache`
 可以走完整重算路径，便于对比。
 
+生成脚本默认启用：
+
+```text
+--repetition-penalty 1.1
+--no-repeat-ngram-size 4
+```
+
+小模型（尤其是 SFT 早期 checkpoint）很容易反复输出同一段话。`repetition_penalty`
+会惩罚已出现 token，`no_repeat_ngram_size=4` 会禁止 4-gram 完全重复。仍然循环时
+可以提高到 `1.15`～`1.25`，或关闭 n-gram 限制观察模型原始分布：
+
+```bash
+python scripts/generate.py ... --repetition-penalty 1.2 --no-repeat-ngram-size 0
+```
+
 ### 2.8 SFT：使用 sft_t2t.jsonl
 
 SFT 阶段读取 MiniMind 的 `sft_t2t.jsonl`，统一转换成 ChatML：
