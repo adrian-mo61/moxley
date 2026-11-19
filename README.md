@@ -10,6 +10,10 @@
 
 项目目标不是堆叠框架，而是把一条完整链路讲清楚：
 
+- **预训练**：BBPE 6400 词表 + `pretrain_t2t.jsonl` → uint16 `.bin` → Moxley-64M
+- **SFT**：`sft_t2t.jsonl` → ChatML + assistant-only loss mask → 对话模型
+- **4090 脚本**：预训练与 SFT 各有对应的一键脚本
+
 ```text
 pretrain_t2t.jsonl
       │
@@ -461,6 +465,151 @@ python scripts/generate.py \
 `--temperature 0` 等价于贪心解码。生成脚本默认使用 KV cache；加 `--no-cache`
 可以走完整重算路径，便于对比。
 
+### 2.8 SFT：使用 sft_t2t.jsonl
+
+SFT 阶段读取 MiniMind 的 `sft_t2t.jsonl`，统一转换成 ChatML：
+
+```text
+<|im_start|>system
+...
+<|im_end|>
+<|im_start|>user
+...
+<|im_end|>
+<|im_start|>assistant
+...
+<|im_end|>
+```
+
+**只有 assistant 内容（含结尾的 `<|im_end|>`）参与 loss**，system / user / tool
+内容全部 mask 成 `-100`。这样可以避免模型学习复述用户问题。
+
+#### 1. 转成 SFT 二进制
+
+```bash
+python scripts/prepare_sft.py \
+  --input data/sft_t2t.jsonl \
+  --tokenizer data/tokenizer \
+  --output-dir data/sft_bin \
+  --max-len 1024 \
+  --val-ratio 0.005
+```
+
+产物：
+
+```text
+data/sft_bin/
+├── tokens.bin          # uint16，所有样本首尾相接
+├── mask.bin            # uint8，1 = assistant token
+├── offsets.npy         # int64，每条样本的起止 offset
+├── train_indices.npy
+├── val_indices.npy
+└── meta.json
+```
+
+14 GB JSONL 第一次转换会比较慢；转换完成后，每个 epoch 直接读 `.bin`，不再解析
+JSON 或重新分词。
+
+#### 2. 从预训练权重开始 SFT
+
+```bash
+python train_sft.py \
+  --data-dir data/sft_bin \
+  --init-from out/moxley-64m-4090/final \
+  --out-dir out/moxley-64m-sft \
+  --batch-size 8 \
+  --grad-accum 4 \
+  --epochs 2 \
+  --lr 1e-5
+```
+
+默认配置：
+
+| 参数 | 默认值 |
+|---|---:|
+| `BATCH_SIZE` | 8 |
+| `GRAD_ACCUM` | 4 |
+| `EPOCHS` | 2 |
+| `LR` | 1e-5 |
+| `MIN_LR` | 1e-6 |
+| `WARMUP_STEPS` | 100 |
+| `MAX_LEN` | 1024 |
+| `INIT_FROM` | `out/moxley-64m-4090/final` |
+
+#### 3. 4090 一键 SFT
+
+脚本会自动检测 `data/sft_bin/`，不存在就先转换：
+
+```bash
+SETUP=1 bash scripts/train_4090_sft.sh
+```
+
+环境已经配置好时：
+
+```bash
+bash scripts/train_4090_sft.sh
+```
+
+默认续训/从头行为与预训练一致：
+
+```bash
+bash scripts/train_4090_sft.sh          # latest.pt 存在则自动续训
+RESUME=0 bash scripts/train_4090_sft.sh # 从头 SFT
+RESUME=1 bash scripts/train_4090_sft.sh # 要求必须存在 checkpoint
+```
+
+如果预训练权重不在默认路径：
+
+```bash
+INIT_FROM=/path/to/out/moxley-64m-4090/final \
+  bash scripts/train_4090_sft.sh
+```
+
+#### 4. SFT 模型对话
+
+SFT 模型使用 ChatML，生成时加 `--chat`：
+
+```bash
+python scripts/generate.py \
+  --model out/moxley-64m-sft/final \
+  --tokenizer data/tokenizer \
+  --prompt "人工智能和机器学习是什么关系？" \
+  --chat \
+  --max-new-tokens 256 \
+  --temperature 0.7 \
+  --top-p 0.9
+```
+
+可以加系统提示：
+
+```bash
+python scripts/generate.py \
+  --model out/moxley-64m-sft/final \
+  --tokenizer data/tokenizer \
+  --prompt "用一句话解释 Transformer。" \
+  --chat \
+  --system "你是一个严谨的中文助手。"
+```
+
+仓库自带一份 6 条样例的 SFT 数据及转换结果，便于先跑通流程：
+
+```text
+data/sample_sft.jsonl
+data/sample_sft_bin/
+```
+
+```bash
+python train_sft.py \
+  --data-dir data/sample_sft_bin \
+  --out-dir out/sample-sft-smoke \
+  --from-scratch \
+  --batch-size 2 \
+  --grad-accum 1 \
+  --max-steps 2 \
+  --device cpu \
+  --no-progress
+```
+
 ---
 
 ## 3. 数据与训练细节
@@ -533,19 +682,25 @@ moxley/
 │   ├── model.py                 # RMSNorm / RoPE / GQA / SwiGLU / CausalLM
 │   ├── tokenizer.py             # BBPE 训练、保存、加载、编码解码
 │   ├── jsonl.py                 # 无第三方依赖的 JSONL 流式读取
+│   ├── sft.py                   # ChatML、assistant mask、SFT 数据集
 │   └── data.py                  # JSONL -> uint16 .bin，memmap Dataset
 ├── scripts/
 │   ├── train_tokenizer.py       # 分词器训练
-│   ├── prepare_data.py          # 数据转换
+│   ├── prepare_data.py          # 预训练数据转换
+│   ├── prepare_sft.py           # SFT 数据转换
 │   ├── generate.py              # 采样
-│   └── train_4090.sh            # Ubuntu + 4090 一键预训练
-├── tests/                       # 单元测试（模型/分词器/数据）
+│   ├── train_4090.sh            # Ubuntu + 4090 预训练
+│   └── train_4090_sft.sh        # Ubuntu + 4090 SFT
+├── tests/                       # 单元测试（模型/分词器/数据/SFT）
 ├── docs/moxley_architecture.*   # 架构图（drawio / png / svg）
 ├── train_pretrain.py            # 预训练入口
-├── data/sample.jsonl            # 20 条样例文本
-├── data/sample_bin/             # 已转换好的 1,357 + 266 token 小样本
+├── train_sft.py                 # SFT 入口
+├── data/sample.jsonl            # 20 条预训练样例
+├── data/sample_bin/             # 已转换好的预训练小样本
+├── data/sample_sft.jsonl        # 6 条 SFT 样例
+├── data/sample_sft_bin/         # 已转换好的 SFT 小样本
 ├── data/tokenizer/              # 6400 词表 BBPE 分词器
-├── data/bin_meta.json           # 完整语料转换统计（4.23 GB token 流的元数据）
+├── data/bin_meta.json           # 完整语料转换统计
 ├── requirements.txt
 └── pyproject.toml
 ```
@@ -567,6 +722,8 @@ pytest -q
 - BBPE 中文/英文/emoji/换行的 encode-decode 往返
 - 特殊 token id 布局
 - JSONL → `.bin` 的 token 数、文件大小、memmap 切片
+- SFT ChatML 格式、assistant-only loss mask、tool_call 监督位置
+- SFT 二进制 shard、offset、train/val 索引和 collate padding
 
 本机端到端冒烟测试（CPU，PyTorch 2.8，64M 配置 + `data/sample_bin`）：
 

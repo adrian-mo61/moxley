@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from moxley.model import MoxleyForCausalLM  # noqa: E402
+from moxley.sft import build_chat_prompt  # noqa: E402
 from moxley.tokenizer import BBPETokenizer  # noqa: E402
 
 
@@ -21,6 +22,8 @@ def main() -> int:
     parser.add_argument("--model", type=Path, default=ROOT / "out" / "final")
     parser.add_argument("--tokenizer", type=Path, default=ROOT / "data" / "tokenizer")
     parser.add_argument("--prompt", default="人工智能的未来是")
+    parser.add_argument("--chat", action="store_true", help="wrap prompt in ChatML for SFT models")
+    parser.add_argument("--system", default=None, help="optional ChatML system prompt")
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=50)
@@ -41,6 +44,9 @@ def main() -> int:
     model.to(device).eval()
 
     prompt_ids = [tokenizer.bos_token_id, *tokenizer.encode(args.prompt)]
+    if args.chat:
+        chat_text = build_chat_prompt(args.prompt, system=args.system)
+        prompt_ids = tokenizer.encode(chat_text)
     input_ids = torch.tensor([prompt_ids], dtype=torch.long, device=device)
     output = model.generate(
         input_ids,
@@ -53,7 +59,10 @@ def main() -> int:
     )
     new_ids = output[0, len(prompt_ids) :].tolist()
     continuation = tokenizer.decode(new_ids, skip_special_tokens=True)
-    print(args.prompt + continuation)
+    if args.chat:
+        print(continuation)
+    else:
+        print(args.prompt + continuation)
     return 0
 
 

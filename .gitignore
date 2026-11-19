@@ -14,8 +14,10 @@ dist/
 # Local data and checkpoints (too large for Git)
 data/*.jsonl
 !data/sample.jsonl
+!data/sample_sft.jsonl
 data/*.parts/
 data/bin/
+data/sft_bin/
 data/._____temp/
 data/.msc
 out/
@@ -24,6 +26,7 @@ checkpoints/
 *.pth
 *.bin
 !data/sample_bin/*.bin
+!data/sample_sft_bin/*.bin
 *.safetensors
 
 # Tokenizer tables are committed, but keep generated training metadata local?
