@@ -302,6 +302,39 @@ class MoxleyForCausalLM(nn.Module):
             )
         return CausalLMOutput(loss=loss, logits=logits, past_key_values=presents)
 
+    def _apply_token_controls(
+        self,
+        logits: torch.Tensor,
+        generated: torch.Tensor,
+        repetition_penalty: float,
+        no_repeat_ngram_size: int,
+    ) -> torch.Tensor:
+        """Apply repetition penalty and no-repeat n-gram blocking in place."""
+        if repetition_penalty > 1.0:
+            for row in range(logits.shape[0]):
+                seen = torch.unique(generated[row])
+                values = logits[row, seen]
+                logits[row, seen] = torch.where(
+                    values > 0, values / repetition_penalty, values * repetition_penalty
+                )
+
+        if no_repeat_ngram_size >= 2:
+            for row in range(logits.shape[0]):
+                tokens = generated[row].tolist()
+                if len(tokens) < no_repeat_ngram_size:
+                    continue
+                prefix = tuple(tokens[-(no_repeat_ngram_size - 1) :])
+                banned: set[int] = set()
+                for start in range(len(tokens) - no_repeat_ngram_size + 1):
+                    if tuple(tokens[start : start + no_repeat_ngram_size - 1]) == prefix:
+                        banned.add(tokens[start + no_repeat_ngram_size - 1])
+                if banned:
+                    keep = logits[row].clone()
+                    logits[row, list(banned)] = float("-inf")
+                    if not torch.isfinite(logits[row]).any():
+                        logits[row] = keep
+        return logits
+
     @torch.inference_mode()
     def generate(
         self,
@@ -333,30 +366,9 @@ class MoxleyForCausalLM(nn.Module):
             else:
                 output = self(generated, use_cache=use_cache)
             logits = output.logits[:, -1].float()
-
-            if repetition_penalty > 1.0:
-                for row in range(logits.shape[0]):
-                    seen = torch.unique(generated[row])
-                    values = logits[row, seen]
-                    logits[row, seen] = torch.where(
-                        values > 0, values / repetition_penalty, values * repetition_penalty
-                    )
-
-            if no_repeat_ngram_size >= 2:
-                for row in range(logits.shape[0]):
-                    tokens = generated[row].tolist()
-                    if len(tokens) < no_repeat_ngram_size:
-                        continue
-                    prefix = tuple(tokens[-(no_repeat_ngram_size - 1) :])
-                    banned: set[int] = set()
-                    for start in range(len(tokens) - no_repeat_ngram_size + 1):
-                        if tuple(tokens[start : start + no_repeat_ngram_size - 1]) == prefix:
-                            banned.add(tokens[start + no_repeat_ngram_size - 1])
-                    if banned:
-                        keep = logits[row].clone()
-                        logits[row, list(banned)] = float("-inf")
-                        if not torch.isfinite(logits[row]).any():
-                            logits[row] = keep
+            logits = self._apply_token_controls(
+                logits, generated, repetition_penalty, no_repeat_ngram_size
+            )
 
             if do_sample:
                 logits = logits / temperature
@@ -395,6 +407,73 @@ class MoxleyForCausalLM(nn.Module):
                 break
 
         return generated
+
+    def generate_stream(
+        self,
+        input_ids: torch.Tensor,
+        max_new_tokens: int = 64,
+        temperature: float = 0.8,
+        top_k: int = 50,
+        top_p: float = 0.9,
+        eos_token_id: Optional[int] = None,
+        use_cache: bool = True,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
+    ):
+        """Yield generated token ids one at a time (single sequence only)."""
+        if input_ids.shape[0] != 1:
+            raise ValueError("generate_stream supports batch size 1")
+        if eos_token_id is None:
+            eos_token_id = self.config.eos_token_id
+        if repetition_penalty < 1.0:
+            raise ValueError("repetition_penalty must be >= 1.0")
+        if no_repeat_ngram_size == 1:
+            raise ValueError("no_repeat_ngram_size must be 0 or >= 2")
+        do_sample = temperature is not None and temperature > 0
+        generated = input_ids
+        past: Optional[list[tuple[torch.Tensor, torch.Tensor]]] = None
+
+        with torch.inference_mode():
+            for _ in range(max_new_tokens):
+                if use_cache and past is not None:
+                    output = self(generated[:, -1:], past_key_values=past, use_cache=True)
+                else:
+                    output = self(generated, use_cache=use_cache)
+                logits = output.logits[:, -1].float()
+                logits = self._apply_token_controls(
+                    logits, generated, repetition_penalty, no_repeat_ngram_size
+                )
+
+                if do_sample:
+                    logits = logits / temperature
+                    if top_k > 0:
+                        k = min(top_k, logits.size(-1))
+                        threshold = torch.topk(logits, k, dim=-1).values[:, -1, None]
+                        logits = logits.masked_fill(logits < threshold, float("-inf"))
+                    if 0 < top_p < 1:
+                        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                        cumulative = torch.cumsum(
+                            torch.softmax(sorted_logits, dim=-1), dim=-1
+                        )
+                        remove = cumulative > top_p
+                        remove[:, 1:] = remove[:, :-1].clone()
+                        remove[:, 0] = False
+                        remove = torch.zeros_like(logits, dtype=torch.bool).scatter(
+                            1, sorted_indices, remove
+                        )
+                        logits = logits.masked_fill(remove, float("-inf"))
+                    next_token = torch.multinomial(
+                        torch.softmax(logits, dim=-1), num_samples=1
+                    )
+                else:
+                    next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+                token_id = int(next_token[0, 0])
+                generated = torch.cat((generated, next_token), dim=-1)
+                past = output.past_key_values
+                if token_id == eos_token_id:
+                    break
+                yield token_id
 
     def save_pretrained(self, path: str | Path) -> None:
         path = Path(path)

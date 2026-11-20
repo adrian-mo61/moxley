@@ -62,6 +62,29 @@ def test_generate():
     assert torch.equal(output[:, :4], prompt)
 
 
+def test_generate_stream_matches_generate():
+    torch.manual_seed(4)
+    model = MoxleyForCausalLM(tiny_config()).eval()
+    prompt = torch.randint(0, 512, (1, 4))
+    streamed = list(
+        model.generate_stream(
+            prompt,
+            max_new_tokens=6,
+            temperature=0,
+            repetition_penalty=1.1,
+            no_repeat_ngram_size=2,
+        )
+    )
+    full = model.generate(
+        prompt,
+        max_new_tokens=6,
+        temperature=0,
+        repetition_penalty=1.1,
+        no_repeat_ngram_size=2,
+    )
+    assert streamed == full[0, 4:].tolist()
+
+
 def test_save_and_load(tmp_path):
     torch.manual_seed(3)
     model = MoxleyForCausalLM(tiny_config()).eval()

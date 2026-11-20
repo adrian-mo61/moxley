@@ -656,6 +656,52 @@ python train_sft.py \
   --no-progress
 ```
 
+### 2.9 本地 Web 对话界面（SSE 流式）
+
+项目内置一个零前端构建的聊天页面，直接用 Python 标准库启动：
+
+```bash
+python scripts/serve_chat.py \
+  --model models/moxley-64m-sft-mini/final \
+  --tokenizer models/tokenizer \
+  --device cpu \
+  --port 8000
+```
+
+打开：
+
+```text
+http://127.0.0.1:8000
+```
+
+界面支持：
+
+- token 级 SSE 流式输出
+- `<think>` 思考过程折叠显示
+- 停止生成
+- temperature / top_p / max_new_tokens 调节
+- 新对话
+- 多轮历史
+
+远程机器访问时监听所有网卡：
+
+```bash
+python scripts/serve_chat.py --host 0.0.0.0 --port 8000
+```
+
+注意云主机的安全组/防火墙需要放行 8000 端口。
+
+页面文件：
+
+```text
+web/index.html
+web/style.css
+web/app.js
+scripts/serve_chat.py
+```
+
+服务端只需要 `torch`、`tokenizers`，不依赖 FastAPI/Flask。
+
 ---
 
 ## 3. 数据与训练细节
@@ -737,6 +783,10 @@ moxley/
 │   ├── generate.py              # 采样
 │   ├── train_4090.sh            # Ubuntu + 4090 预训练
 │   └── train_4090_sft.sh        # Ubuntu + 4090 SFT
+├── web/                         # 零构建流式聊天前端
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
 ├── tests/                       # 单元测试（模型/分词器/数据/SFT）
 ├── docs/moxley_architecture.*   # 架构图（drawio / png / svg）
 ├── train_pretrain.py            # 预训练入口
