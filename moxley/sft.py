@@ -301,6 +301,21 @@ class SFTBinDataset(Dataset):
             self.indices = np.arange(len(self.offsets) - 1, dtype=np.int64)
         if len(self.indices) == 0:
             raise ValueError("SFT split is empty")
+        if int(self.indices.min()) < 0 or int(self.indices.max()) >= len(self.offsets) - 1:
+            raise ValueError("SFT indices point outside offsets.npy")
+
+        token_bytes = Path(self.tokens_path).stat().st_size
+        mask_bytes = Path(self.mask_path).stat().st_size
+        expected = int(self.offsets[-1]) * 2
+        if token_bytes % 2 or token_bytes != mask_bytes * 2 or expected != token_bytes:
+            raise ValueError(
+                "SFT shard mismatch: "
+                f"tokens.bin={token_bytes:,} bytes, "
+                f"mask.bin={mask_bytes:,} bytes, "
+                f"offsets[-1]={int(self.offsets[-1]):,} tokens. "
+                "tokens.bin, mask.bin and offsets.npy must come from the same "
+                "prepare/rewrite run and be fully uploaded."
+            )
 
     @property
     def tokens(self) -> np.memmap:

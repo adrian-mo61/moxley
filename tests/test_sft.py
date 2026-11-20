@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 from moxley.sft import (
@@ -95,3 +96,15 @@ def test_chat_prompt():
     prompt = build_chat_prompt("你好", system="你是助手。")
     assert prompt.startswith("<|im_start|>system\n你是助手。")
     assert prompt.endswith("<|im_start|>assistant\n")
+
+
+def test_sft_dataset_rejects_mismatched_shards(tmp_path: Path):
+    (tmp_path / "tokens.bin").write_bytes(np.array([1, 2], dtype="<u2").tobytes())
+    (tmp_path / "mask.bin").write_bytes(b"")
+    np.save(tmp_path / "offsets.npy", np.array([0, 2], dtype=np.int64))
+    with pytest.raises(ValueError, match="SFT shard mismatch"):
+        SFTBinDataset(
+            tmp_path / "tokens.bin",
+            tmp_path / "mask.bin",
+            tmp_path / "offsets.npy",
+        )
