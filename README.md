@@ -781,6 +781,7 @@ moxley/
 │   ├── prepare_data.py          # 预训练数据转换
 │   ├── prepare_sft.py           # SFT 数据转换
 │   ├── generate.py              # 采样
+│   ├── serve_chat.py            # SSE 流式聊天服务
 │   ├── train_4090.sh            # Ubuntu + 4090 预训练
 │   └── train_4090_sft.sh        # Ubuntu + 4090 SFT
 ├── web/                         # 零构建流式聊天前端
