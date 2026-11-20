@@ -21,6 +21,7 @@ def test_special_token_layout(tokenizer: BBPETokenizer):
     assert tokenizer.pad_token_id == 0
     assert tokenizer.bos_token_id == 1
     assert tokenizer.eos_token_id == 2
+    assert tokenizer.token_to_id("<|im_start|>") == 1
     assert tokenizer.vocab_size == 512
 
 

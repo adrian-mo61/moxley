@@ -190,6 +190,9 @@ class BBPETokenizer:
     def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
         return self.tokenizer.encode(text, add_special_tokens=add_special_tokens).ids
 
+    def token_to_id(self, token: str) -> int | None:
+        return self.tokenizer.token_to_id(token)
+
     def encode_batch(
         self, texts: Sequence[str], add_special_tokens: bool = False
     ) -> list[list[int]]:

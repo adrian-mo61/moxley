@@ -480,6 +480,9 @@ python scripts/generate.py \
 python scripts/generate.py ... --repetition-penalty 1.2 --no-repeat-ngram-size 0
 ```
 
+SFT 模型可能会输出 `<think>...</think>` 推理块。生成脚本默认只显示 `</think>`
+之后的最终回答；想看完整思考过程时加 `--show-think`。
+
 ### 2.8 SFT：使用 sft_t2t.jsonl
 
 SFT 阶段读取 MiniMind 的 `sft_t2t.jsonl`，统一转换成 ChatML：

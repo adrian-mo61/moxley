@@ -24,6 +24,11 @@ def main() -> int:
     parser.add_argument("--prompt", default="人工智能的未来是")
     parser.add_argument("--chat", action="store_true", help="wrap prompt in ChatML for SFT models")
     parser.add_argument("--system", default=None, help="optional ChatML system prompt")
+    parser.add_argument(
+        "--show-think",
+        action="store_true",
+        help="show the model's <think> reasoning instead of only the final answer",
+    )
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=50)
@@ -72,7 +77,19 @@ def main() -> int:
         no_repeat_ngram_size=args.no_repeat_ngram_size,
     )
     new_ids = output[0, len(prompt_ids) :].tolist()
-    continuation = tokenizer.decode(new_ids, skip_special_tokens=True)
+    if not args.show_think:
+        think_open = tokenizer.token_to_id("<think>")
+        think_close = tokenizer.token_to_id("</think>")
+        if think_close is not None and think_close in new_ids:
+            cut = len(new_ids) - 1 - new_ids[::-1].index(think_close)
+            new_ids = new_ids[cut + 1 :]
+        elif think_open is not None and think_open in new_ids:
+            print(
+                "[model did not finish its <think> block within max_new_tokens; "
+                "showing the reasoning text]",
+                file=sys.stderr,
+            )
+    continuation = tokenizer.decode(new_ids, skip_special_tokens=True).strip()
     if args.chat:
         print(continuation)
     else:
