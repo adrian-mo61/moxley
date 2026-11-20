@@ -702,6 +702,88 @@ scripts/serve_chat.py
 
 服务端只需要 `torch`、`tokenizers`，不依赖 FastAPI/Flask。
 
+### 2.10 替换模型身份并重建 SFT 数据
+
+`scripts/rewrite_sft_identity.py` 会在读取每个 conversation 时直接改写身份相关字段，
+然后立刻做 tokenization，不会额外生成一份 14GB 的 JSONL：
+
+```bash
+python scripts/rewrite_sft_identity.py \
+  --input data/sft_t2t.jsonl \
+  --tokenizer data/tokenizer \
+  --output-dir data/sft_bin_moxley \
+  --max-len 1024 \
+  --val-ratio 0.005 \
+  --overwrite
+```
+
+改写规则：
+
+- `MiniMind` / `minimind` / `MiniMind-3` → `moxley`
+- `jingyaogong` / `JingyaoGong` / `Jingyao` → `莫小荒`
+- “我是由 jingyaogong 开发的高效小参数AI模型” → “我是由莫小荒开发的moxley”
+- “我是一个AI模型” 这类自我介绍也会统一成 “我是由莫小荒开发的moxley”
+
+转换只写：
+
+```text
+data/sft_bin_moxley/
+├── tokens.bin
+├── mask.bin
+├── offsets.npy
+├── train_indices.npy
+├── val_indices.npy
+└── meta.json
+```
+
+实际转换结果（完整 `sft_t2t.jsonl`）：
+
+| 指标 | 数值 |
+|---|---:|
+| 原始 conversations | 5,109,432 |
+| 可用样本 | 5,052,557 |
+| token 数 | 3,683,198,375 |
+| 训练样本 | 5,027,294 |
+| 训练 token | 3,664,741,901 |
+| 验证样本 | 25,263 |
+| 验证 token | 18,456,474 |
+| 改写 conversations | 78,362 |
+| 改写字段 | 129,211 |
+| 残留 `minimind` / `jingyaogong` | 0 |
+| 转换耗时 | 4,577.8 秒（约 76 分钟） |
+| 输出大小 | 约 10.37 GB |
+
+统计记录在 [`data/sft_bin_moxley_meta.json`](data/sft_bin_moxley_meta.json)。
+
+`meta.json` 里的 `identity_rewrite.stats` 会记录改写了多少条 conversation、多少字段，
+以及是否还有残留的 `minimind` / `jingyaogong`。
+
+训练时把数据目录换成新 shard：
+
+```bash
+python train_sft.py \
+  --data-dir data/sft_bin_moxley \
+  --init-from out/moxley-64m-4090/final \
+  --out-dir out/moxley-64m-sft-moxley \
+  --batch-size 8 \
+  --grad-accum 4 \
+  --epochs 2 \
+  --lr 1e-5
+```
+
+只想先检查改写效果时：
+
+```bash
+python scripts/rewrite_sft_identity.py \
+  --input data/sft_t2t.jsonl \
+  --tokenizer data/tokenizer \
+  --output-dir out/sft_moxley_1k \
+  --max-samples 1000 \
+  --max-len 1024 \
+  --val-ratio 0.01 \
+  --overwrite
+```
+
 ---
 
 ## 3. 数据与训练细节
@@ -775,11 +857,13 @@ moxley/
 │   ├── tokenizer.py             # BBPE 训练、保存、加载、编码解码
 │   ├── jsonl.py                 # 无第三方依赖的 JSONL 流式读取
 │   ├── sft.py                   # ChatML、assistant mask、SFT 数据集
+│   ├── identity.py              # MiniMind → Moxley 身份改写
 │   └── data.py                  # JSONL -> uint16 .bin，memmap Dataset
 ├── scripts/
 │   ├── train_tokenizer.py       # 分词器训练
 │   ├── prepare_data.py          # 预训练数据转换
 │   ├── prepare_sft.py           # SFT 数据转换
+│   ├── rewrite_sft_identity.py  # 改写身份并直接生成 SFT shards
 │   ├── generate.py              # 采样
 │   ├── serve_chat.py            # SSE 流式聊天服务
 │   ├── train_4090.sh            # Ubuntu + 4090 预训练
@@ -799,6 +883,7 @@ moxley/
 ├── data/tokenizer/              # 6400 词表 BBPE 分词器
 ├── data/bin_meta.json           # 预训练语料转换统计
 ├── data/sft_bin_meta.json       # SFT 语料转换统计
+├── data/sft_bin_moxley_meta.json # 身份改写后的 SFT 统计
 ├── requirements.txt
 └── pyproject.toml
 ```

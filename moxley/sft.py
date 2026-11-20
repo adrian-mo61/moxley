@@ -23,7 +23,7 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Iterator, Sequence
+from typing import TYPE_CHECKING, Callable, Sequence
 
 import numpy as np
 import torch
@@ -378,6 +378,7 @@ def prepare_sft(
     max_samples: int = 0,
     batch_docs: int = 256,
     max_buffer_tokens: int = 32 * 1024 * 1024,
+    transform: Callable[[list[dict]], list[dict]] | None = None,
     quiet: bool = False,
 ) -> dict:
     """Convert SFT JSONL into a uint16 token stream + uint8 loss mask."""
@@ -446,6 +447,8 @@ def prepare_sft(
 
         for conversations in iter_sft_conversations(input_path, max_samples=max_samples):
             documents += 1
+            if transform is not None:
+                conversations = transform(conversations)
             pending.append(conversations)
             if len(pending) >= batch_docs:
                 consume_batch()

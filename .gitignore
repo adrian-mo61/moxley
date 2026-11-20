@@ -19,6 +19,7 @@ data/*.parts/
 data/bin/
 data/sft_bin/
 data/sft_bin_mini/
+data/sft_bin_moxley/
 data/._____temp/
 data/.msc
 out/
