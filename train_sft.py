@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import itertools
 import math
 import os
 import sys
@@ -307,18 +306,47 @@ def main() -> int:
     )
     scaler = make_grad_scaler(amp_enabled and amp_dtype == torch.float16)
 
-    def make_loader(dataset: SFTBinDataset, epoch: int, shuffle: bool) -> DataLoader:
+    def make_loader(
+        dataset: SFTBinDataset,
+        epoch: int,
+        shuffle: bool,
+        start_batch: int = 0,
+    ) -> DataLoader:
         generator = torch.Generator()
         generator.manual_seed(args.seed + epoch)
+        if not shuffle:
+            return DataLoader(
+                dataset,
+                batch_size=args.batch_size,
+                shuffle=False,
+                drop_last=False,
+                collate_fn=collate_sft,
+                num_workers=args.num_workers,
+                pin_memory=device.type == "cuda",
+                persistent_workers=False,
+            )
+        # Build the epoch permutation once, then skip whole batches by index.
+        # Resuming used to walk DataLoader through every skipped batch, which
+        # decoded millions of samples before the first optimizer step.
+        order = torch.randperm(len(dataset), generator=generator).tolist()
+        start = max(0, start_batch) * args.batch_size
+        order = order[start:]
+        usable = (len(order) // args.batch_size) * args.batch_size
+        order = order[:usable]
+        if not order:
+            raise ValueError(
+                f"resume start_batch={start_batch} is beyond the epoch "
+                f"({len(dataset)} samples)"
+            )
         return DataLoader(
             dataset,
             batch_size=args.batch_size,
-            shuffle=shuffle,
-            drop_last=shuffle,
+            sampler=order,
+            shuffle=False,
+            drop_last=False,
             collate_fn=collate_sft,
             num_workers=args.num_workers,
             pin_memory=device.type == "cuda",
-            generator=generator,
             persistent_workers=False,
         )
 
@@ -415,10 +443,16 @@ def main() -> int:
             print(message, flush=True)
 
     for epoch in range(start_epoch, args.epochs):
-        loader = make_loader(train_dataset, epoch, shuffle=True)
-        epoch_offset = start_batch
+        epoch_start_batch = start_batch if epoch == start_epoch else 0
+        loader = make_loader(
+            train_dataset,
+            epoch,
+            shuffle=True,
+            start_batch=epoch_start_batch,
+        )
+        epoch_offset = epoch_start_batch
         micro_step = 0
-        for x, y in itertools.islice(loader, start_batch, None):
+        for x, y in loader:
             if micro_step >= steps_per_epoch * args.grad_accum:
                 break
             if args.max_steps > 0 and global_step >= args.max_steps:
