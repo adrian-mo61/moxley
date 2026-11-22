@@ -42,12 +42,12 @@ from moxley.sft import SFTBinDataset, collate_sft  # noqa: E402
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Moxley-64M supervised fine-tuning")
     parser.add_argument("--config", type=Path, default=ROOT / "configs" / "moxley_64m.json")
-    parser.add_argument("--data-dir", type=Path, default=ROOT / "data" / "sft_bin")
+    parser.add_argument("--data-dir", type=Path, default=ROOT / "data" / "sft_bin_moxley")
     parser.add_argument("--out-dir", type=Path, default=ROOT / "out" / "moxley-64m-sft")
     parser.add_argument(
         "--init-from",
         type=Path,
-        default=ROOT / "out" / "moxley-64m-4090" / "final",
+        default=ROOT / "models" / "moxley-64m-pretrain",
         help="pretrained checkpoint directory or .pt file",
     )
     parser.add_argument(
@@ -240,8 +240,9 @@ def main() -> int:
     if missing:
         raise SystemExit(
             f"missing SFT shards in {data_dir}: {missing}\n"
-            "Run: python scripts/prepare_sft.py --input data/sft_t2t.jsonl "
-            "--tokenizer data/tokenizer --output-dir data/sft_bin"
+            "Run: python scripts/rewrite_sft_identity.py "
+            "--input data/sft_t2t.jsonl --tokenizer data/tokenizer "
+            "--output-dir data/sft_bin_moxley"
         )
 
     meta = load_metadata(data_dir) if (data_dir / "meta.json").exists() else {}

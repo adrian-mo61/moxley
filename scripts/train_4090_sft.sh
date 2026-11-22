@@ -67,9 +67,9 @@ print(
 PY
 
 SFT_JSONL="${SFT_JSONL:-$ROOT/data/sft_t2t.jsonl}"
-DATA_DIR="${DATA_DIR:-$ROOT/data/sft_bin}"
+DATA_DIR="${DATA_DIR:-$ROOT/data/sft_bin_moxley}"
 OUT_DIR="${OUT_DIR:-$ROOT/out/moxley-64m-sft}"
-INIT_FROM="${INIT_FROM:-$ROOT/out/moxley-64m-4090/final}"
+INIT_FROM="${INIT_FROM:-$ROOT/models/moxley-64m-pretrain}"
 TOKENIZER="${TOKENIZER:-$ROOT/data/tokenizer}"
 
 # ---------------------------------------------------------------------------

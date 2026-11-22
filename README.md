@@ -505,10 +505,10 @@ SFT 阶段读取 MiniMind 的 `sft_t2t.jsonl`，统一转换成 ChatML：
 #### 1. 转成 SFT 二进制
 
 ```bash
-python scripts/prepare_sft.py \
+python scripts/rewrite_sft_identity.py \
   --input data/sft_t2t.jsonl \
   --tokenizer data/tokenizer \
-  --output-dir data/sft_bin \
+  --output-dir data/sft_bin_moxley \
   --max-len 1024 \
   --val-ratio 0.005
 ```
@@ -516,7 +516,7 @@ python scripts/prepare_sft.py \
 产物：
 
 ```text
-data/sft_bin/
+data/sft_bin_moxley/
 ├── tokens.bin          # uint16，所有样本首尾相接
 ├── mask.bin            # uint8，1 = assistant token
 ├── offsets.npy         # int64，每条样本的起止 offset
@@ -526,20 +526,20 @@ data/sft_bin/
 ```
 
 完整 `sft_t2t.jsonl` 的实际转换结果（记录在
-[`data/sft_bin_meta.json`](data/sft_bin_meta.json)）：
+[`data/sft_bin_moxley_meta.json`](data/sft_bin_moxley_meta.json)）：
 
 | 指标 | 数值 |
 |---|---:|
 | 源文件 | 14,096,018,369 B |
 | 原始 conversations | 5,109,432 |
 | 可用样本 | 5,052,557 |
-| 字符数 | 8,811,125,028 |
-| token 数 | 3,683,151,995 |
-| `tokens.bin` | 7,366,303,990 B |
-| `mask.bin` | 3,683,151,995 B |
-| 训练集 | 5,027,294 样本 / 3,664,695,793 token |
-| 验证集 | 25,263 样本 / 18,456,202 token |
-| 转换耗时 | 4,635.8 s（约 77 分钟，CPU） |
+| 字符数 | 8,811,657,197 |
+| token 数 | 3,683,198,375 |
+| `tokens.bin` | 7,366,396,750 B |
+| `mask.bin` | 3,683,198,375 B |
+| 训练集 | 5,027,294 样本 / 3,664,741,901 token |
+| 验证集 | 25,263 样本 / 18,456,474 token |
+| 转换耗时 | 4,577.8 s（约 76 分钟，CPU） |
 
 `max_len=1024` 会截断部分超长对话（本次有 1,499,292 条触及上限）；如果更在意长对话
 完整性，可以改用 `--max-len 2048` 重新转换，但显存和训练时间会增加。
@@ -560,8 +560,8 @@ python scripts/prepare_sft.py \
 
 ```bash
 python train_sft.py \
-  --data-dir data/sft_bin \
-  --init-from out/moxley-64m-4090/final \
+  --data-dir data/sft_bin_moxley \
+  --init-from models/moxley-64m-pretrain \
   --out-dir out/moxley-64m-sft \
   --batch-size 8 \
   --grad-accum 4 \
@@ -580,11 +580,11 @@ python train_sft.py \
 | `MIN_LR` | 1e-6 |
 | `WARMUP_STEPS` | 100 |
 | `MAX_LEN` | 1024 |
-| `INIT_FROM` | `out/moxley-64m-4090/final` |
+| `INIT_FROM` | `models/moxley-64m-pretrain` |
 
 #### 3. 4090 一键 SFT
 
-脚本会自动检测 `data/sft_bin/`，不存在就先转换：
+脚本会自动检测 `data/sft_bin_moxley/`，不存在就先转换：
 
 ```bash
 SETUP=1 bash scripts/train_4090_sft.sh
@@ -607,7 +607,7 @@ RESUME=1 bash scripts/train_4090_sft.sh # 要求必须存在 checkpoint
 如果预训练权重不在默认路径：
 
 ```bash
-INIT_FROM=/path/to/out/moxley-64m-4090/final \
+INIT_FROM=models/moxley-64m-pretrain \
   bash scripts/train_4090_sft.sh
 ```
 
@@ -765,7 +765,7 @@ data/sft_bin_moxley/
 ```bash
 python train_sft.py \
   --data-dir data/sft_bin_moxley \
-  --init-from out/moxley-64m-4090/final \
+  --init-from models/moxley-64m-pretrain \
   --out-dir out/moxley-64m-sft-moxley \
   --batch-size 8 \
   --grad-accum 4 \
@@ -887,7 +887,6 @@ moxley/
 ├── data/sample_sft_bin/         # 已转换好的 SFT 小样本
 ├── data/tokenizer/              # 6400 词表 BBPE 分词器
 ├── data/bin_meta.json           # 预训练语料转换统计
-├── data/sft_bin_meta.json       # SFT 语料转换统计
 ├── data/sft_bin_moxley_meta.json # 身份改写后的 SFT 统计
 ├── requirements.txt
 └── pyproject.toml
