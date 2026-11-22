@@ -2,43 +2,112 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Moxley-64M · Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f1ede3">
+  <meta name="description" content="Moxley — a 64M parameter field model, thinking out loud.">
+  <title>Moxley — Field Notes</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/newsreader-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
+  <div class="grain" aria-hidden="true"></div>
   <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">M</div>
-        <div>
-          <div class="brand-name">Moxley-64M</div>
-          <div class="brand-sub">SFT · streaming chat</div>
+
+    <header class="masthead">
+      <div class="masthead-top">
+        <div class="kicker">
+          <span>FIELD NOTES</span>
+          <span class="kicker-rule"></span>
+          <span>NO. 064</span>
+          <span class="kicker-local">LOCAL INFERENCE</span>
+        </div>
+        <div class="masthead-actions">
+          <div class="live-status" id="live-status">
+            <span class="signal" aria-hidden="true"></span>
+            <span id="status-text">CONNECTING</span>
+          </div>
+          <button class="new-session" id="new-session" type="button">
+            New session <span aria-hidden="true">↗</span>
+          </button>
         </div>
       </div>
-      <div class="topbar-actions">
-        <span id="status" class="status">连接中…</span>
-        <button id="new-chat" class="ghost-button" type="button">新对话</button>
+
+      <div class="masthead-main">
+        <h1>Moxley<span class="period">.</span></h1>
+        <div class="masthead-aside">
+          <p class="lede">A small mind,<br><em>thinking out loud.</em></p>
+          <div class="specs">
+            <span>64M PARAMETERS</span>
+            <span>CHATML / SFT</span>
+            <span>RUNNING LOCALLY</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="masthead-rule">
+        <span>SCROLL TO READ</span>
+        <span class="rule-line" aria-hidden="true"></span>
+        <span>EST. 2026</span>
       </div>
     </header>
 
-    <main id="messages" class="messages" aria-live="polite"></main>
+    <main class="workspace">
+      <aside class="rail" aria-label="Session details">
+        <div class="rail-inner">
+          <div class="rail-block">
+            <span class="label">MODEL</span>
+            <div class="rail-number">64<span>M</span></div>
+            <p>parameters / fine-tuned</p>
+          </div>
+          <div class="rail-block">
+            <span class="label">SESSION</span>
+            <div class="rail-clock" id="session-clock">00:00</div>
+            <p>elapsed / local time</p>
+          </div>
+          <div class="rail-block">
+            <span class="label">SIGNAL</span>
+            <p class="rail-signal"><span class="signal small" aria-hidden="true"></span><span id="rail-status">CONNECTING</span></p>
+            <p>one request at a time</p>
+          </div>
+          <div class="rail-note">
+            <span class="label">NOTE 01</span>
+            <p>This is a 64M parameter SFT model. It is small, literal, and occasionally wrong. Read the trace, not just the answer.</p>
+          </div>
+        </div>
+      </aside>
 
-    <footer class="composer">
-      <details class="settings">
-        <summary>生成参数</summary>
-        <div class="settings-grid">
-          <label>
-            <span>temperature <b id="temperature-value">0.6</b></span>
+      <section class="transcript-panel" aria-label="Conversation transcript">
+        <div class="transcript-head">
+          <span>TRANSCRIPT</span>
+          <span id="turn-count">00 TURNS</span>
+        </div>
+        <div class="messages" id="messages" aria-live="polite"></div>
+      </section>
+
+      <aside class="controls" aria-label="Generation parameters">
+        <div class="controls-inner">
+          <div class="controls-head">
+            <span>GENERATION</span>
+            <span class="controls-mark" aria-hidden="true">II</span>
+          </div>
+
+          <label class="control" for="temperature">
+            <span class="control-label">TEMPERATURE <b id="temperature-value">0.6</b></span>
             <input id="temperature" type="range" min="0" max="1.2" step="0.1" value="0.6">
+            <span class="control-scale"><span>precise</span><span>wild</span></span>
           </label>
-          <label>
-            <span>top_p <b id="top-p-value">0.9</b></span>
+
+          <label class="control" for="top-p">
+            <span class="control-label">TOP_P <b id="top-p-value">0.90</b></span>
             <input id="top-p" type="range" min="0.5" max="1" step="0.05" value="0.9">
+            <span class="control-scale"><span>narrow</span><span>open</span></span>
           </label>
-          <label>
-            <span>最大生成长度</span>
+
+          <label class="control" for="max-new-tokens">
+            <span class="control-label">MAX TOKENS <b id="max-token-value">512</b></span>
             <select id="max-new-tokens">
               <option value="128">128</option>
               <option value="256">256</option>
@@ -46,16 +115,48 @@
               <option value="512" selected>512</option>
             </select>
           </label>
-        </div>
-      </details>
 
-      <form id="composer-form" class="input-row">
-        <textarea id="prompt" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行…" autocomplete="off"></textarea>
-        <button id="send" class="send-button" type="submit">发送</button>
-        <button id="stop" class="stop-button" type="button" hidden>停止</button>
+          <label class="trace-toggle" for="show-trace">
+            <input id="show-trace" type="checkbox" checked>
+            <span class="toggle-track" aria-hidden="true"><span class="toggle-dot"></span></span>
+            <span>SHOW TRACE</span>
+          </label>
+
+          <div class="keyboard-note">
+            <span class="label">KEYS</span>
+            <p><kbd>↵</kbd> send <span>/</span> <kbd>⇧ ↵</kbd> line break</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="composer">
+      <form id="composer-form">
+        <div class="composer-head">
+          <span>WRITE TO MOXLEY</span>
+          <span id="char-count">0 / 2000</span>
+        </div>
+        <div class="composer-main">
+          <span class="prompt-caret" aria-hidden="true">↳</span>
+          <textarea id="prompt" rows="1" maxlength="2000" placeholder="Ask a question…" autocomplete="off" spellcheck="false"></textarea>
+          <button id="send" class="send-button" type="submit">
+            <span>Send</span>
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+              <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button id="stop" class="stop-button" type="button" hidden>Stop</button>
+        </div>
+        <div class="composer-foot">
+          <span>ENTER TO SEND / SHIFT+ENTER FOR A NEW LINE</span>
+          <span>OUTPUT MAY BE WRONG. CHECK THE SOURCE.</span>
+        </div>
       </form>
-      <div class="hint">本地模型推理 · 流式输出 · 生成内容可能不准确</div>
     </footer>
   </div>
+
+  <noscript>
+    <p class="noscript">This interface needs JavaScript to stream tokens from the local model.</p>
+  </noscript>
 </body>
 </html>

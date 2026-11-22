@@ -4,155 +4,288 @@ const els = {
   prompt: document.getElementById("prompt"),
   send: document.getElementById("send"),
   stop: document.getElementById("stop"),
-  newChat: document.getElementById("new-chat"),
-  status: document.getElementById("status"),
+  newSession: document.getElementById("new-session"),
+  liveStatus: document.getElementById("live-status"),
+  statusText: document.getElementById("status-text"),
+  railStatus: document.getElementById("rail-status"),
+  sessionClock: document.getElementById("session-clock"),
+  turnCount: document.getElementById("turn-count"),
   temperature: document.getElementById("temperature"),
   temperatureValue: document.getElementById("temperature-value"),
   topP: document.getElementById("top-p"),
   topPValue: document.getElementById("top-p-value"),
-  maxNewTokens: document.getElementById("max-new-tokens"),
+  maxTokens: document.getElementById("max-new-tokens"),
+  maxTokenValue: document.getElementById("max-token-value"),
+  showTrace: document.getElementById("show-trace"),
+  charCount: document.getElementById("char-count"),
 };
+
+const WELCOME = `
+  <div class="welcome">
+    <span class="label">INTRODUCTORY NOTE / 00</span>
+    <h2>Ask a small mind<br><em>a large question.</em></h2>
+    <div class="welcome-copy">
+      <p>I am Moxley, a 64-million-parameter language model trained for conversation. I am local, literal, and still learning. Start anywhere.</p>
+    </div>
+    <div class="suggestions" aria-label="Suggested prompts">
+      <button class="suggestion" type="button" data-prompt="用一句话解释什么是机器学习。">
+        <span class="s-index">01</span><span class="s-text">用一句话解释什么是机器学习。</span><span class="s-arrow">↗</span>
+      </button>
+      <button class="suggestion" type="button" data-prompt="你是谁？由谁开发？">
+        <span class="s-index">02</span><span class="s-text">你是谁？由谁开发？</span><span class="s-arrow">↗</span>
+      </button>
+      <button class="suggestion" type="button" data-prompt="用 Python 写一个加法函数。">
+        <span class="s-index">03</span><span class="s-text">用 Python 写一个加法函数。</span><span class="s-arrow">↗</span>
+      </button>
+      <button class="suggestion" type="button" data-prompt="用三句话解释 Transformer。">
+        <span class="s-index">04</span><span class="s-text">用三句话解释 Transformer。</span><span class="s-arrow">↗</span>
+      </button>
+    </div>
+  </div>
+`;
 
 const state = {
   messages: [],
   busy: false,
   controller: null,
-  assistantText: "",
-  thinkText: "",
-  answerEl: null,
-  thinkBody: null,
-  row: null,
+  current: null,
+  turn: 0,
+  sessionId: 0,
+  sessionStart: Date.now(),
+  ready: false,
+  device: "",
 };
 
-function scrollToBottom() {
-  els.messages.scrollTop = els.messages.scrollHeight;
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function scrollToBottom(force = false) {
+  const distance =
+    els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight;
+  if (force || distance < 180) {
+    els.messages.scrollTop = els.messages.scrollHeight;
+  }
+}
+
+function updateClock() {
+  const seconds = Math.floor((Date.now() - state.sessionStart) / 1000);
+  els.sessionClock.textContent = `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+}
+
+function updateTurnCount() {
+  els.turnCount.textContent = `${pad(state.turn)} ${state.turn === 1 ? "TURN" : "TURNS"}`;
+}
+
+function setStatus(text, offline = false) {
+  els.statusText.textContent = text;
+  els.liveStatus.classList.toggle("is-offline", offline);
 }
 
 function setBusy(busy) {
   state.busy = busy;
   els.send.disabled = busy;
   els.stop.hidden = !busy;
-  els.status.textContent = busy ? "生成中…" : "已连接";
+  els.liveStatus.classList.toggle("is-busy", busy);
+  if (busy) {
+    setStatus("GENERATING");
+  } else if (state.ready) {
+    setStatus(state.device ? `LOCAL / ${state.device.toUpperCase()}` : "LOCAL");
+  } else if (!els.liveStatus.classList.contains("is-offline")) {
+    setStatus("CONNECTING");
+  }
 }
 
-function addRow(role, text = "") {
-  const row = document.createElement("div");
-  row.className = `message-row ${role}`;
+function paintRange(input) {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const percent = max === min ? 100 : ((value - min) / (max - min)) * 100;
+  input.style.setProperty("--fill", `${percent}%`);
+}
 
-  const avatar = document.createElement("div");
-  avatar.className = "avatar";
-  avatar.textContent = role === "user" ? "你" : "M";
+function syncSettings() {
+  els.temperatureValue.textContent = Number(els.temperature.value).toFixed(1);
+  els.topPValue.textContent = Number(els.topP.value).toFixed(2);
+  els.maxTokenValue.textContent = els.maxTokens.value;
+  paintRange(els.temperature);
+  paintRange(els.topP);
+}
 
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
+function updateCharCount() {
+  const count = els.prompt.value.length;
+  els.charCount.textContent = `${count} / 2000`;
+}
 
-  if (role === "assistant") {
-    const think = document.createElement("details");
-    think.className = "think";
-    think.hidden = true;
-    const summary = document.createElement("summary");
-    summary.textContent = "思考过程";
-    const body = document.createElement("div");
-    body.className = "think-body";
-    think.append(summary, body);
-    bubble.appendChild(think);
+function resizePrompt() {
+  els.prompt.style.height = "auto";
+  els.prompt.style.height = `${Math.min(els.prompt.scrollHeight, 128)}px`;
+}
 
-    const answer = document.createElement("div");
-    answer.className = "answer-text";
-    bubble.appendChild(answer);
-    state.thinkBody = body;
-    state.answerEl = answer;
-  } else {
-    bubble.textContent = text;
-  }
+function renderWelcome() {
+  els.messages.innerHTML = WELCOME;
+  els.messages.scrollTop = 0;
+}
 
-  row.append(avatar, bubble);
+function entryLabel(role, index) {
+  return `${role === "user" ? "QUESTION" : "ANSWER"} / ${pad(index)}`;
+}
+
+function addUserEntry(text) {
+  const index = ++state.turn;
+  const row = document.createElement("article");
+  row.className = "entry user";
+  row.innerHTML = `
+    <div class="entry-index">
+      <span class="num">${pad(index)}</span>
+      <span class="role">YOU</span>
+    </div>
+    <div class="entry-body">
+      <div class="entry-label">${entryLabel("user", index)}</div>
+      <div class="entry-content"></div>
+    </div>
+  `;
+  row.querySelector(".entry-content").textContent = text;
   els.messages.appendChild(row);
-  scrollToBottom();
-  return row;
+  updateTurnCount();
+  scrollToBottom(true);
 }
 
-function addWelcome() {
-  const row = addRow("assistant");
-  if (state.answerEl) {
-    state.answerEl.textContent =
-      "你好，我是 Moxley-64M。这是一个本地运行的 64M 参数 SFT 模型，回答可能不准确。";
-  }
-  state.answerEl = null;
-  state.thinkBody = null;
-  return row;
-}
+function addAssistantEntry() {
+  const index = ++state.turn;
+  const row = document.createElement("article");
+  row.className = "entry assistant";
+  row.innerHTML = `
+    <div class="entry-index">
+      <span class="num">${pad(index)}</span>
+      <span class="role">MOXLEY</span>
+    </div>
+    <div class="entry-body">
+      <div class="entry-label">${entryLabel("assistant", index)}</div>
+      <details class="trace" hidden>
+        <summary>TRACE / INTERNAL MONOLOGUE</summary>
+        <div class="trace-body"></div>
+      </details>
+      <div class="entry-content answer-text">Reading the room…</div>
+      <div class="entry-meta">
+        <span class="meta-time"></span>
+        <span class="meta-tokens"></span>
+        <button class="copy-button" type="button">Copy</button>
+      </div>
+    </div>
+  `;
+  els.messages.appendChild(row);
+  updateTurnCount();
+  scrollToBottom(true);
 
-function extractAssistantShell() {
-  const bubble = state.row?.querySelector(".bubble");
-  if (!bubble) return;
-  state.answerEl = bubble.querySelector(".answer-text");
-  state.thinkBody = bubble.querySelector(".think-body");
-}
+  const current = {
+    row,
+    index,
+    trace: row.querySelector(".trace"),
+    traceBody: row.querySelector(".trace-body"),
+    answerEl: row.querySelector(".answer-text"),
+    metaTime: row.querySelector(".meta-time"),
+    metaTokens: row.querySelector(".meta-tokens"),
+    copyButton: row.querySelector(".copy-button"),
+    answerText: "",
+    thinkText: "",
+    tokens: 0,
+    startedAt: Date.now(),
+    finished: false,
+  };
+  state.current = current;
 
-function showThink(text) {
-  const bubble = state.row?.querySelector(".bubble");
-  if (!bubble) return;
-  const think = bubble.querySelector(".think");
-  if (!think) return;
-  think.hidden = false;
-  if (!state.thinkText) {
-    think.open = true;
-  }
-  state.thinkText += text;
-  if (state.thinkBody) state.thinkBody.textContent += text;
-  if (state.answerEl && !state.assistantText) {
-    state.answerEl.textContent = "";
-  }
-  scrollToBottom();
-}
-
-function showAnswer(text) {
-  state.assistantText += text;
-  if (state.answerEl) {
-    state.answerEl.textContent += text;
-    state.answerEl.classList.add("streaming");
-  }
-  scrollToBottom();
-}
-
-function finishAssistant(errorMessage = "") {
-  if (state.answerEl) state.answerEl.classList.remove("streaming");
-  if (errorMessage) {
-    const bubble = state.row?.querySelector(".bubble");
-    if (bubble) {
-      const error = document.createElement("div");
-      error.className = "error-text";
-      error.textContent = errorMessage;
-      bubble.appendChild(error);
+  current.copyButton.addEventListener("click", async () => {
+    const text = current.answerText.trim() || current.thinkText.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      current.copyButton.textContent = "Copied";
+      setTimeout(() => {
+        current.copyButton.textContent = "Copy";
+      }, 1600);
+    } catch {
+      current.copyButton.textContent = "No access";
     }
+  });
+
+  return current;
+}
+
+function showThink(current, text) {
+  if (!current || !text) return;
+  current.trace.hidden = false;
+  if (!current.thinkText) current.trace.open = true;
+  current.thinkText += text;
+  current.traceBody.textContent += text;
+  if (!current.answerText) current.answerEl.textContent = "";
+  scrollToBottom();
+}
+
+function showAnswer(current, text) {
+  if (!current || !text) return;
+  if (!current.answerText) {
+    text = text.replace(/^\s+/, "");
+    if (current.trace) current.trace.open = false;
   }
-  const content = state.assistantText.trim() || state.thinkText.trim();
+  if (!text) return;
+  current.answerText += text;
+  current.answerEl.textContent = current.answerText;
+  current.answerEl.classList.add("streaming");
+  scrollToBottom();
+}
+
+function finishCurrent(errorMessage = "") {
+  const current = state.current;
+  if (!current || current.finished) return;
+  current.finished = true;
+  current.answerEl.classList.remove("streaming");
+  current.row.classList.add("is-done");
+
+  const elapsed = (Date.now() - current.startedAt) / 1000;
+  current.metaTime.textContent = `${elapsed.toFixed(1)}s`;
+  if (current.tokens) current.metaTokens.textContent = `${current.tokens} TOKENS`;
+
+  if (errorMessage) {
+    const error = document.createElement("div");
+    error.className = "entry-error";
+    error.textContent = errorMessage;
+    current.row.querySelector(".entry-body").appendChild(error);
+  }
+
+  const content = current.answerText.trim() || current.thinkText.trim();
   if (content) {
     state.messages.push({ role: "assistant", content });
   }
+  if (!current.answerText.trim() && current.thinkText.trim()) {
+    current.answerEl.textContent = "The model stopped inside its trace. Open the trace above to read it.";
+  }
+  state.current = null;
+  scrollToBottom(true);
 }
 
-function parseError(response) {
-  return response
-    .json()
-    .then((data) => data.error || `HTTP ${response.status}`)
-    .catch(() => `HTTP ${response.status}`);
+async function readError(response) {
+  try {
+    const data = await response.json();
+    return data.error || `HTTP ${response.status}`;
+  } catch {
+    return `HTTP ${response.status}`;
+  }
 }
 
-async function sendMessage() {
-  const prompt = els.prompt.value.trim();
-  if (!prompt || state.busy) return;
+async function sendMessage(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text || state.busy) return;
 
-  state.messages.push({ role: "user", content: prompt });
-  addRow("user", prompt);
+  const session = state.sessionId;
+  const welcome = els.messages.querySelector(".welcome");
+  if (welcome) welcome.remove();
+  state.messages.push({ role: "user", content: text });
+  addUserEntry(text);
   els.prompt.value = "";
-  autoResize();
-  state.assistantText = "";
-  state.thinkText = "";
-  state.row = addRow("assistant");
-  extractAssistantShell();
-  if (state.answerEl) state.answerEl.textContent = "思考中…";
+  updateCharCount();
+  resizePrompt();
+  addAssistantEntry();
   setBusy(true);
 
   const controller = new AbortController();
@@ -167,14 +300,12 @@ async function sendMessage() {
         messages: state.messages,
         temperature: Number(els.temperature.value),
         top_p: Number(els.topP.value),
-        max_new_tokens: Number(els.maxNewTokens.value),
+        max_new_tokens: Number(els.maxTokens.value),
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(await parseError(response));
-    }
-    if (!response.body) throw new Error("浏览器不支持流式响应");
+    if (!response.ok) throw new Error(await readError(response));
+    if (!response.body) throw new Error("This browser does not support streaming responses.");
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -198,55 +329,52 @@ async function sendMessage() {
           } catch {
             continue;
           }
+          if (session !== state.sessionId) return;
           if (event.type === "token") {
-            if (state.answerEl && state.answerEl.textContent === "思考中…") {
-              state.answerEl.textContent = "";
-            }
-            if (event.channel === "think") showThink(event.text);
-            else showAnswer(event.text);
+            if (event.channel === "think") showThink(state.current, event.text);
+            else showAnswer(state.current, event.text);
+          } else if (event.type === "done") {
+            if (state.current) state.current.tokens = event.generated_tokens || 0;
+            finishCurrent();
           } else if (event.type === "error") {
-            throw new Error(event.message || "生成失败");
+            throw new Error(event.message || "Generation failed.");
           }
         }
       }
     }
-    finishAssistant();
-  } catch (err) {
-    if (err.name === "AbortError") {
-      finishAssistant("已停止生成。");
+    if (session === state.sessionId) finishCurrent();
+  } catch (error) {
+    if (session !== state.sessionId) return;
+    if (error.name === "AbortError") {
+      finishCurrent("Generation interrupted.");
     } else {
-      finishAssistant(`请求失败：${err.message || err}`);
-      els.status.textContent = "连接失败";
+      finishCurrent(`Request failed: ${error.message || error}`);
+      setStatus("OFFLINE", true);
     }
   } finally {
-    state.controller = null;
-    setBusy(false);
-    els.prompt.focus();
-    scrollToBottom();
+    if (session === state.sessionId) {
+      state.controller = null;
+      setBusy(false);
+      els.prompt.focus();
+    }
   }
 }
 
-function autoResize() {
-  els.prompt.style.height = "auto";
-  els.prompt.style.height = `${Math.min(els.prompt.scrollHeight, 150)}px`;
-}
-
-function updateRangeLabels() {
-  els.temperatureValue.textContent = Number(els.temperature.value).toFixed(1);
-  els.topPValue.textContent = Number(els.topP.value).toFixed(2);
-}
-
-function newChat() {
+function newSession() {
+  state.sessionId += 1;
   if (state.controller) state.controller.abort();
   state.messages = [];
-  state.assistantText = "";
-  state.thinkText = "";
-  state.row = null;
-  state.answerEl = null;
-  state.thinkBody = null;
+  state.current = null;
+  state.turn = 0;
+  state.sessionStart = Date.now();
   els.messages.innerHTML = "";
-  addWelcome();
+  renderWelcome();
+  updateTurnCount();
+  updateClock();
   setBusy(false);
+  els.prompt.value = "";
+  updateCharCount();
+  resizePrompt();
   els.prompt.focus();
 }
 
@@ -255,31 +383,58 @@ async function checkHealth() {
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error();
     const data = await response.json();
-    els.status.textContent = `已连接 · ${data.device}`;
+    state.ready = true;
+    state.device = data.device || "";
+    els.liveStatus.classList.remove("is-offline");
+    els.railStatus.textContent = "LOCAL";
+    setStatus(`LOCAL / ${state.device.toUpperCase()}`);
   } catch {
-    els.status.textContent = "服务不可用";
+    state.ready = false;
+    els.railStatus.textContent = "OFFLINE";
+    setStatus("OFFLINE", true);
   }
 }
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
-  sendMessage();
+  sendMessage(els.prompt.value);
 });
 
-els.prompt.addEventListener("input", autoResize);
+els.messages.addEventListener("click", (event) => {
+  const suggestion = event.target.closest("[data-prompt]");
+  if (!suggestion || state.busy) return;
+  sendMessage(suggestion.dataset.prompt);
+});
+
+els.prompt.addEventListener("input", () => {
+  updateCharCount();
+  resizePrompt();
+});
+
 els.prompt.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    sendMessage();
+    sendMessage(els.prompt.value);
   }
 });
-els.stop.addEventListener("click", () => state.controller?.abort());
-els.newChat.addEventListener("click", newChat);
-els.temperature.addEventListener("input", updateRangeLabels);
-els.topP.addEventListener("input", updateRangeLabels);
 
-addWelcome();
-updateRangeLabels();
-autoResize();
+els.stop.addEventListener("click", () => state.controller?.abort());
+els.newSession.addEventListener("click", newSession);
+els.temperature.addEventListener("input", syncSettings);
+els.topP.addEventListener("input", syncSettings);
+els.maxTokens.addEventListener("change", syncSettings);
+
+els.showTrace.checked = localStorage.getItem("moxley-show-trace") !== "0";
+document.body.classList.toggle("hide-traces", !els.showTrace.checked);
+els.showTrace.addEventListener("change", () => {
+  document.body.classList.toggle("hide-traces", !els.showTrace.checked);
+  localStorage.setItem("moxley-show-trace", els.showTrace.checked ? "1" : "0");
+});
+
+renderWelcome();
+syncSettings();
+updateCharCount();
+updateClock();
+setInterval(updateClock, 1000);
 checkHealth();
 els.prompt.focus();
