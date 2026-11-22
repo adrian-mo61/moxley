@@ -678,6 +678,8 @@ http://127.0.0.1:8000
 
 - token 级 SSE 流式输出
 - `<think>` 思考过程折叠显示
+- Markdown 渲染（代码块、列表、表格、引用），代码块一键复制
+- 模型输出经过 DOMPurify 消毒，原始 HTML / 图片 / iframe 会被剥离
 - 停止生成
 - temperature / top_p / max_new_tokens 调节
 - 新对话
@@ -871,7 +873,10 @@ moxley/
 ├── web/                         # 零构建流式聊天前端
 │   ├── index.html
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   ├── favicon.svg
+│   ├── fonts/                   # 本地 Fraunces / Newsreader / Plex Mono
+│   └── vendor/                  # marked + DOMPurify
 ├── tests/                       # 单元测试（模型/分词器/数据/SFT）
 ├── docs/moxley_architecture.*   # 架构图（drawio / png / svg）
 ├── train_pretrain.py            # 预训练入口

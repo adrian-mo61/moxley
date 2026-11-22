@@ -222,6 +222,73 @@ function showThink(current, text) {
   scrollToBottom();
 }
 
+const markdownAvailable = Boolean(window.marked && window.DOMPurify);
+if (markdownAvailable) {
+  window.marked.setOptions({ gfm: true, breaks: true });
+  window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+}
+
+let markdownFrame = null;
+
+function enhanceCodeBlocks(root) {
+  for (const pre of root.querySelectorAll("pre")) {
+    if (pre.querySelector(".code-copy")) continue;
+    const code = pre.querySelector("code");
+    if (code) {
+      const language = [...code.classList].find((name) => name.startsWith("language-"));
+      if (language) pre.dataset.lang = language.slice("language-".length);
+    }
+    const button = document.createElement("button");
+    button.className = "code-copy";
+    button.type = "button";
+    button.textContent = "COPY";
+    button.addEventListener("click", async () => {
+      if (!code) return;
+      try {
+        await navigator.clipboard.writeText(code.textContent);
+        button.textContent = "COPIED";
+        setTimeout(() => {
+          button.textContent = "COPY";
+        }, 1400);
+      } catch {
+        button.textContent = "NO ACCESS";
+      }
+    });
+    pre.appendChild(button);
+  }
+}
+
+function renderAnswerMarkdown(current) {
+  if (!current) return;
+  if (!markdownAvailable) {
+    current.answerEl.textContent = current.answerText;
+    return;
+  }
+  const html = window.marked.parse(current.answerText, { gfm: true, breaks: true });
+  current.answerEl.innerHTML = window.DOMPurify.sanitize(html, {
+    FORBID_TAGS: ["img", "iframe", "form", "input", "button", "video", "audio", "style"],
+    FORBID_ATTR: ["style"],
+  });
+  current.answerEl.classList.add("markdown");
+  enhanceCodeBlocks(current.answerEl);
+}
+
+function scheduleAnswerRender(current) {
+  if (!current || markdownFrame) return;
+  markdownFrame = requestAnimationFrame(() => {
+    markdownFrame = null;
+    if (state.current === current) {
+      renderAnswerMarkdown(current);
+      scrollToBottom();
+    }
+  });
+}
+
 function showAnswer(current, text) {
   if (!current || !text) return;
   if (!current.answerText) {
@@ -230,8 +297,8 @@ function showAnswer(current, text) {
   }
   if (!text) return;
   current.answerText += text;
-  current.answerEl.textContent = current.answerText;
   current.answerEl.classList.add("streaming");
+  scheduleAnswerRender(current);
   scrollToBottom();
 }
 
@@ -239,6 +306,11 @@ function finishCurrent(errorMessage = "") {
   const current = state.current;
   if (!current || current.finished) return;
   current.finished = true;
+  if (markdownFrame) {
+    cancelAnimationFrame(markdownFrame);
+    markdownFrame = null;
+  }
+  renderAnswerMarkdown(current);
   current.answerEl.classList.remove("streaming");
   current.row.classList.add("is-done");
 
@@ -257,8 +329,11 @@ function finishCurrent(errorMessage = "") {
   if (content) {
     state.messages.push({ role: "assistant", content });
   }
-  if (!current.answerText.trim() && current.thinkText.trim()) {
-    current.answerEl.textContent = "The model stopped inside its trace. Open the trace above to read it.";
+  if (!current.answerText.trim()) {
+    current.answerEl.classList.remove("markdown");
+    current.answerEl.textContent = current.thinkText.trim()
+      ? "The model stopped inside its trace. Open the trace above to read it."
+      : "No answer was produced.";
   }
   state.current = null;
   scrollToBottom(true);
